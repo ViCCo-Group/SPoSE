@@ -201,7 +201,7 @@ def run(
                 checkpoint = torch.load(PATH)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optim.load_state_dict(checkpoint['optim_state_dict'])
-                start = checkpoint['epoch'] #np.max(checkpoints)
+                start = checkpoint['epoch'] + 1 #we must start one epoch after the last checkpoint
                 loss = checkpoint['loss']
                 train_accs = checkpoint['train_accs']
                 val_accs = checkpoint['val_accs']
