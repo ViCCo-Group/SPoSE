@@ -269,8 +269,8 @@ def run(
 
         avg_train_loss = torch.mean(batch_losses_train)
         avg_train_acc = torch.mean(batch_accs_train)
-        train_losses.append(avg_train_loss)
-        train_accs.append(avg_train_acc)
+        train_losses.append(avg_train_loss.item())
+        train_accs.append(avg_train_acc.item())
 
         ################################################
         ################ validation ####################
@@ -295,8 +295,8 @@ def run(
 
         avg_val_loss = torch.mean(batch_losses_val)
         avg_val_acc = torch.mean(batch_accs_val)
-        val_losses.append(avg_val_loss)
-        val_accs.append(avg_val_acc)
+        val_losses.append(avg_val_loss.item())
+        val_accs.append(avg_val_acc.item())
 
         logger.info('Epoch: {0}/{1}'.format(epoch + 1, epochs))
         logger.info('Train acc: {:.3f}'.format(avg_train_acc))
