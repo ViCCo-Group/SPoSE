@@ -37,7 +37,7 @@ def parseargs():
     aa('--task', type=str, default='odd_one_out',
         choices=['odd_one_out', 'similarity_task'])
     aa('--folder', type=str, default='behavioral/',
-        #choices=['behavioral/', 'text/', 'visual/', 'neural/'],
+        choices=['behavioral/', 'text/', 'visual/', 'neural/'],
         help='define for which modality task should be performed')
     aa('--results_dir', type=str, default='./results/',
         help='optional specification of results directory (if not provided will resort to ./results/)')
@@ -48,8 +48,8 @@ def parseargs():
         help='determines softmax temperature in probabilistic tripletizing approach')
     aa('--learning_rate', type=float, default=0.001,
         help='learning rate to be used in optimizer')
-    aa('--lmbda_idx', type=int,
-        help='lambda value determines l1-norm fraction to regularize loss (index to access lambda value in pre-defined range over k values)')
+    aa('--lmbda', type=float,
+        help='lambda value determines l1-norm fraction to regularize loss')
     aa('--embed_dim', metavar='D', type=int, default=90,
         help='dimensionality of the embedding matrix')
     aa('--batch_size', metavar='B', type=int, default=100,
@@ -105,7 +105,7 @@ def run(
         epochs:int,
         window_size:int,
         sampling_method:str,
-        lmbda_idx:int,
+        lmbda:float,
         lr:float,
         p=None,
         embed_path=None,
@@ -133,9 +133,9 @@ def run(
                                                         method=tripletize,
                                                         n_samples=n_samples,
                                                         sampling_constant=sampling_constant,
+                                                        beta=beta,
                                                         folder=folder,
                                                         device=device,
-                                                        beta=beta,
                                                         )
         logger.info('Finished tripletizing data')
     else:
@@ -171,20 +171,7 @@ def run(
     pval_thres = .1
 
     #l1-norm fraction to regularize loss
-    if re.search(r'text', folder):
-        lambdas = np.arange(0.005, 0.011, 0.001)
-        lambdas /= n_items
-        lmbda = lambdas[lmbda_idx]
-    elif re.search(r'visual', folder):
-        lambdas = np.arange(0.008, 0.018, 0.001)
-        lambdas /= n_items
-        lmbda = lambdas[lmbda_idx]
-    elif re.search(r'behavioral', folder):
-        if version == 'variational':
-            lambdas = np.hstack((0.05, 0.1, np.log(np.arange(1.5, 13.5, .5))))
-            lmbda = lambdas[lmbda_idx]
-        else:
-            lmbda = 0.008/n_items
+    lmbda /= n_items
 
     #initialize model and optimizer
     if version == 'variational':
@@ -353,7 +340,6 @@ def run(
                         'val_accs': val_accs,
                         'nneg_d_over_time': nneg_d_over_time,
                         }, os.path.join(PATH, f'model_epoch{epoch+1:04d}.tar'))
-
             logger.info(f'Saving model parameters at epoch {epoch+1}')
 
             if (epoch + 1) > window_size:
@@ -382,7 +368,7 @@ def run(
     if not os.path.exists(PATH):
         os.makedirs(PATH)
 
-    with open(os.path.join(PATH, 'lambda_search' + '_' + str(lmbda_idx) + '.json'), 'w') as results_file:
+    with open(os.path.join(PATH, 'lambda_search' + '_' + str(lmbda) + '.json'), 'w') as results_file:
         json.dump(results, results_file)
 
 if __name__ == "__main__":
@@ -435,7 +421,7 @@ if __name__ == "__main__":
         epochs=args.epochs,
         window_size=args.window_size,
         sampling_method=args.sampling_method,
-        lmbda_idx=args.lmbda_idx,
+        lmbda=args.lmbda,
         lr=args.learning_rate,
         p=args.p,
         embed_path=embed_path,

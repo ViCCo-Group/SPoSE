@@ -15,7 +15,7 @@
  --tripletize (if you have pre-trained embeddings for N items or objects, the code can automatically tripletize them for you)
  --beta (if you want your pre-trained embeddings to be tripletized probabilistically, you can specify a beta value to determine the softmax temperature)
  --learning_rate (learning rate to be used in optimizer)
- --lmbda_idx (lambda value determines l1-norm fraction to regularize loss; index to access specific lambda value from a pre-defined range over k values))
+ --lmbda (lambda value determines l1-norm fraction to regularize loss; will be divided by number of items in the original data matrix)
  --embed_dim (embedding dimensionality, i.e., output size of the neural network)
  --batch_size (batch size)
  --epochs (maximum number of epochs to optimize SPoSE model for)
@@ -30,12 +30,12 @@
 Here is an example call:
 
 ```
-python main.py --task odd_one_out --folder behavioral/ --results_dir ./results/ --learning_rate 0.001 --lmbda_idx 0 --embed_dim 90 --batch_size 100 --epochs 500 --window_size 20 --sampling_method soft --p 0.7 --plot_dims --device cuda:0 --rnd_seed 42
+python main.py --task odd_one_out --folder behavioral/ --results_dir ./results/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 90 --batch_size 100 --epochs 500 --window_size 20 --sampling_method soft --p 0.7 --plot_dims --device cuda:0 --rnd_seed 42
 ```
 
 #### NOTES:
 
-1. The script expects your triplets to be in the folder `./triplets/behavioral/` or `./triplets/text/`, dependent on the data you use. Note that the triplets are expected to be in the format `N x 3`, where N = number of trials (e.g., 100k) and 3 refers to the triplets, where `col_0` = anchor_1, `col_1` = anchor_2, `col_2` = odd one out. Triplet data must be split into train and test splits, and named `train_90.txt` and `test_10.txt` respectively. In case you would like to use some sort of text embeddings (e.g., sensvecs), simply put your `.csv` files into the folder `./text/`, and the script will automatically tripletize the word embeddings for you and move the triplet data into `./triplets/text/`.  
+1. The script expects your triplets to be in the folder `./triplets/behavioral/` or `./triplets/text/`, dependent on the data you use. Note that the triplets are expected to be in the format `N x 3`, where N = number of trials (e.g., 100k) and 3 refers to the triplets, where `col_0` = anchor_1, `col_1` = anchor_2, `col_2` = odd one out. Triplet data must be split into train and test splits, and named `train_90.txt` and `test_10.txt` respectively. In case you would like to use some sort of text embeddings (e.g., sensvecs), simply put your `.csv` files into the folder `./text/`, and the script will automatically tripletize the word embeddings for you and move the triplet data into `./triplets/text/`. 
 
 2. The script automatically saves the weight matrix `W` of the SPoSE model at each convergence checkpoint. 
 

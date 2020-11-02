@@ -92,7 +92,6 @@ def tripletize_data(
                     beta=None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """create triplets of object embedding similarities, and for each triplet find the odd-one-out"""
-    #some word embeddings contain NaN values
     if re.search(r'text', PATH):
         E = np.loadtxt(PATH, delimiter=',')
         E = remove_nans(E) #remove all objects that contain NaN values
