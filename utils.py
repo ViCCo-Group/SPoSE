@@ -8,6 +8,7 @@ __all__ = [
             'encode_as_onehot',
             'get_digits',
             'get_nneg_dims',
+            'get_results_files',
             'kl_div',
             'load_data',
             'merge_dicts',
@@ -221,8 +222,25 @@ def get_digits(string:str) -> int:
                 nonzero = True
     return int(c)
 
-def sort_results(results:dict, descending:bool=False) -> dict:
-    return dict(sorted(results.items(), key=lambda kv:kv[0], reverse=descending))
+def get_results_files(
+                      results_dir:str,
+                      rnd_seed:int,
+                      modality:str,
+                      version:str,
+                      subfolder:str,
+                      vision_model=None,
+                      layer=None,
+) -> list:
+    if modality == 'visual':
+        assert isinstance(vision_model, str) and isinstance(layer, str), 'name of vision model and layer are required'
+        PATH = os.path.join(results_dir, f'seed{rnd_seed}', modality, vision_model, layer, version, subfolder)
+    else:
+        PATH = os.path.join(results_dir, f'seed{rnd_seed}', modality, version, subfolder)
+    files = [os.path.join(PATH, f) for f in os.listdir(PATH) if f.endswith('.json')]
+    return files
+
+def sort_results(results:dict) -> dict:
+    return dict(sorted(results.items(), key=lambda kv:kv[0], reverse=False))
 
 def merge_dicts(files:list) -> dict:
     """merge multiple .json files efficiently into a single dictionary"""
