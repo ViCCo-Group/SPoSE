@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 __all__ = [
+            'plot_grid_search_results',
             'plot_nneg_dims_over_time',
             'plot_multiple_performances',
             'plot_single_performance',
@@ -125,4 +126,52 @@ def plot_multiple_performances(
     fig.tight_layout()
     plt.savefig(dir + 'model_performances_over_time.png')
     plt.clf()
+    plt.close()
+
+def plot_grid_search_results(
+                            results:dict,
+                            plot_dir:str,
+                            rnd_seed:int,
+                            modality:str,
+                            version:str,
+                            subfolder:str,
+                            vision_model=None,
+                            layer=None,
+                            show_plot:bool=False,
+) -> None:
+    fig = plt.figure(figsize=(18, 10), dpi=100)
+    ax = plt.subplot(111)
+
+    #hide the right and top spines
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    #only show ticks on the left (y-axis) and bottom (x-axis) spines
+    ax.yaxis.set_ticks_position('left')
+    ax.xaxis.set_ticks_position('bottom')
+
+    lambdas = list(map(lambda l: round(float(l), 2), results.keys()))
+    train_accs, val_accs = zip(*[(val['train_acc'], val['val_acc']) for lam, val in results.items()])
+
+    ax.plot(train_accs, alpha=.8, label='Train')
+    ax.plot(val_accs, alpha=.8, label='Val')
+    ax.set_xticks(range(len(results)))
+    ax.set_xticklabels(lambdas)
+    ax.set_ylabel('Accuracy')
+    ax.set_xlabel(r'$\lambda$')
+    ax.legend(fancybox=True, shadow=True, loc='upper right')
+    plt.tight_layout()
+
+    if modality == 'visual':
+        assert isinstance(vision_model, str) and isinstance(layer, str), 'name of vision model and corresponding layer are required'
+        PATH = os.path.join(plot_dir, f'seed{rnd_seed}', modality, vision_model, layer, version, subfolder)
+    else:
+        PATH = os.path.join(plot_dir, f'seed{rnd_seed}', modality, version, subfolder)
+    if not os.path.exists(PATH):
+        os.makedirs(PATH)
+
+    plt.savefig(os.path.join(PATH, 'lambda_search_results.png'))
+    if show_plot:
+        plt.show()
+        plt.clf()
     plt.close()
