@@ -255,7 +255,7 @@ def run(
             c_entropy = trinomial_loss(anchor, positive, negative, task)
 
             if version == 'variational':
-                loss = c_entropy + (1/n_batches) * kl_div(mu, l, mu_hat, l_hat)
+                loss = c_entropy + (1/n_batches) * kl_div(mu_hat, l_hat, mu, l)
             else:
                 l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
                 pos_pen = torch.sum(F.relu(-model.fc.weight)) #positivity constraint to enforce non-negative values in our embedding matrix
