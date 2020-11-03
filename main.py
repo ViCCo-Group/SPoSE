@@ -180,13 +180,13 @@ def run(
         k = 3 if task == 'odd_one_out' else 2
         mu = torch.zeros(batch_size * k, embed_dim).to(device)
         l = torch.ones(batch_size * k, embed_dim).mul(lmbda).to(device)
-        optim = AdamW(model.parameters(), lr=lr)
         n_batches = len(train_batches) #for each mini-batch kld must be scaled by 1/B, where B = n_batches
     else:
         #deterministic version of SPoSE
         model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
-        optim = Adam(model.parameters(), lr=lr)
 
+    #initialise optimizer
+    optim = Adam(model.parameters(), lr=lr)
     #move model to current device
     model.to(device)
 
