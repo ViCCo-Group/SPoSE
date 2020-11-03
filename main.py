@@ -201,7 +201,7 @@ def run(
                 checkpoint = torch.load(PATH)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optim.load_state_dict(checkpoint['optim_state_dict'])
-                start = checkpoint['epoch'] + 1 #we must start one epoch after the last checkpoint
+                start = checkpoint['epoch'] + 1
                 loss = checkpoint['loss']
                 train_accs = checkpoint['train_accs']
                 val_accs = checkpoint['val_accs']
@@ -368,7 +368,7 @@ def run(
     if not os.path.exists(PATH):
         os.makedirs(PATH)
 
-    with open(os.path.join(PATH, 'lambda_search' + '_' + str(lmbda) + '.json'), 'w') as results_file:
+    with open(os.path.join(PATH, f'lambda_search_{lmbda:.7f}.json'), 'w') as results_file:
         json.dump(results, results_file)
 
 if __name__ == "__main__":
