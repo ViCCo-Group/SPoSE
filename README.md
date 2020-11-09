@@ -10,8 +10,10 @@
   python main.py
   
  --task (specify whether you'd like the model to perform an odd-one-out (i.e., 3AFC) or similarity (i.e., 2AFC) task)
- --folder (folder where to load your triplets from or where to automatically create them from word embeddings (text) or neural activations (visual))
- --results_dir (if you would like to specify a directory for your results, this is where you can do it; else './results/' will be created for you)
+ --modality (define for which modality specified task should be performed by SPoSE (e.g., behavioral, text, visual))
+ --triplets_dir (in case you have tripletized data, provide directory from where to load triplets)
+ --results_dir (optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/seed/))
+ --plots_dir (optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/seed/)
  --tripletize (if you have pre-trained embeddings for N items or objects, the code can automatically tripletize them for you)
  --beta (if you want your pre-trained embeddings to be tripletized probabilistically, you can specify a beta value to determine the softmax temperature)
  --learning_rate (learning rate to be used in optimizer)
@@ -30,7 +32,7 @@
 Here is an example call:
 
 ```
-python main.py --task odd_one_out --folder behavioral/ --results_dir ./results/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 90 --batch_size 100 --epochs 500 --window_size 20 --sampling_method soft --p 0.7 --plot_dims --device cuda:0 --rnd_seed 42
+python main.py --task odd_one_out --triplets_dir triplets/behavioral/ --modality behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 90 --batch_size 100 --epochs 500 --window_size 20 --sampling_method soft --p 0.7 --plot_dims --device cuda:0 --rnd_seed 42
 ```
 
 #### NOTES:
