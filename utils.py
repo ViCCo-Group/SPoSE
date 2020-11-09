@@ -5,16 +5,24 @@ __all__ = [
             'BatchGenerator',
             'choice_accuracy',
             'cross_entropy_loss',
+            'compute_kld',
             'encode_as_onehot',
+            'get_best_lambda',
             'get_digits',
             'get_nneg_dims',
             'get_results_files',
+            'kld_online',
+            'kld_offline',
             'load_data',
+            'load_model',
+            'load_weights',
             'merge_dicts',
+            'prune_weights',
             'softmax',
             'trinomial_loss',
             'trinomial_probs',
             'tripletize_data',
+            'validation',
         ]
 
 import json
@@ -23,6 +31,7 @@ import os
 import re
 import torch
 import numpy as np
+import torch.nn.functional as F
 
 from typing import Tuple
 
@@ -92,6 +101,7 @@ def tripletize_data(
                     beta=None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """create triplets of object embedding similarities, and for each triplet find the odd-one-out"""
+    #some word embeddings contain NaN values
     if re.search(r'text', PATH):
         E = np.loadtxt(PATH, delimiter=',')
         E = remove_nans(E) #remove all objects that contain NaN values
@@ -163,9 +173,9 @@ def tripletize_data(
 
     return train_triplets, test_triplets
 
-def load_data(device:torch.device, folder:str, dir:str='./triplets/') -> Tuple[torch.Tensor, torch.Tensor]:
-    train_triplets = torch.from_numpy(np.loadtxt(dir + folder + 'train_90.txt')).to(device).type(torch.LongTensor)
-    test_triplets = torch.from_numpy(np.loadtxt(dir + folder + 'test_10.txt')).to(device).type(torch.LongTensor)
+def load_data(device:torch.device, triplets_dir:str) -> Tuple[torch.Tensor, torch.Tensor]:
+    train_triplets = torch.from_numpy(np.loadtxt(os.path.join(triplets_dir, 'train_90.txt'))).to(device).type(torch.LongTensor)
+    test_triplets = torch.from_numpy(np.loadtxt(os.path.join(triplets_dir, 'test_10.txt'))).to(device).type(torch.LongTensor)
     return train_triplets, test_triplets
 
 def encode_as_onehot(I:torch.Tensor, triplets:torch.Tensor) -> torch.Tensor:
@@ -201,10 +211,48 @@ def trinomial_loss(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Te
     sims = compute_similarities(anchor, positive, negative, method)
     return cross_entropy_loss(sims)
 
+def kld_online(mu_1:torch.Tensor, l_1:torch.Tensor, mu_2:torch.Tensor, l_2:torch.Tensor) -> torch.Tensor:
+    return torch.mean(torch.log(l_1/l_2) + (l_2/l_1) * torch.exp(-l_1 * torch.abs(mu_1-mu_2)) + l_2*torch.abs(mu_1-mu_2) - 1)
+
+def kld_offline(mu_1:torch.Tensor, b_1:torch.Tensor, mu_2:torch.Tensor, b_2:torch.Tensor) -> torch.Tensor:
+    return torch.log(b_2/b_1) + (b_1/b_2) * torch.exp(-torch.abs(mu_1-mu_2)/b_1) + torch.abs(mu_1-mu_2)/b_2 - 1
+
 def get_nneg_dims(W:torch.Tensor, eps:float=0.1) -> int:
     w_max = W.max(dim=1)[0]
     nneg_d = len(w_max[w_max > eps])
     return nneg_d
+
+########################################################
+######### helper functions for offline evaluation ######
+#######################################################
+
+def validation(
+                model,
+                val_batches,
+                version:str,
+                task:str,
+                device:torch.device,
+                embed_dim:int,
+                ) -> Tuple[float, float]:
+    model.eval()
+    with torch.no_grad():
+        batch_losses_val = torch.zeros(len(val_batches))
+        batch_accs_val = torch.zeros(len(val_batches))
+        for j, batch in enumerate(val_batches):
+            batch = batch.to(device)
+
+            if version == 'variational':
+                logits, _, _, _ = model(batch, device)
+            else:
+                logits = model(batch)
+            anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
+            val_loss = trinomial_loss(anchor, positive, negative, task)
+            batch_losses_val[j] += val_loss.item()
+            batch_accs_val[j] += choice_accuracy(anchor, positive, negative, task)
+
+    avg_val_loss = torch.mean(batch_losses_val).item()
+    avg_val_acc = torch.mean(batch_accs_val).item()
+    return avg_val_loss, avg_val_acc
 
 def get_digits(string:str) -> int:
     c = ""

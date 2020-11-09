@@ -36,11 +36,15 @@ def parseargs():
         help='whether to apply a deterministic or variational version of SPoSE')
     aa('--task', type=str, default='odd_one_out',
         choices=['odd_one_out', 'similarity_task'])
-    aa('--folder', type=str, default='behavioral/',
+    aa('--modality', type=str, default='behavioral/',
         choices=['behavioral/', 'text/', 'visual/', 'neural/'],
-        help='define for which modality task should be performed')
+        help='define for which modality SPoSE should be perform specified task')
+    aa('--triplets_dir', type=str, default=None,
+        help='in case you have tripletized data, provide directory from where to load triplets')
     aa('--results_dir', type=str, default='./results/',
-        help='optional specification of results directory (if not provided will resort to ./results/)')
+         help='optional specification of results directory (if not provided will resort to ./results/)')
+    aa('--plots_dir', type=str, default='./plots/',
+        help='optional specification of directory for plots (if not provided will resort to ./plots/)')
     aa('--tripletize', type=str, default=None,
         choices=[None, 'deterministic', 'probabilistic'],
         help='whether to deterministically (argmax) or probabilistically (conditioned on PMF) sample odd-one-out choices')
@@ -98,7 +102,10 @@ def run(
         version:str,
         task:str,
         seed:int,
-        folder:str,
+        modality:str,
+        results_dir:str,
+        plots_dir:str,
+        triplets_dir:str,
         device:torch.device,
         batch_size:int,
         embed_dim:int,
@@ -118,14 +125,14 @@ def run(
     logger = setup_logging(file='spose_model_optimization.log')
     logger.setLevel(logging.INFO)
 
-    #load train and test datasets
-    if isinstance(tripletize, str):
+    #in case no triplets exist, tripletize data
+    if isinstance(triplets_dir, type(None)):
         assert isinstance(embed_path, str), 'PATH from where to load neural activations or word embeddings must be defined'
         logger.info(f'Started tripletizing data with {tripletize} sampling of odd-one-out choices')
-        if re.search(r'visual', folder):
-            n_samples = 1.0e+7
-            sampling_constant = 1.0e+6
-        elif re.search(r'text', folder):
+        if re.search(r'visual', modality):
+            n_samples = 2.0e+7
+            sampling_constant = 2.0e+6
+        elif re.search(r'text', modality):
             n_samples = 1.5e+6
             sampling_constant = 1.5e+5
         train_triplets, test_triplets = tripletize_data(
@@ -134,14 +141,14 @@ def run(
                                                         n_samples=n_samples,
                                                         sampling_constant=sampling_constant,
                                                         beta=beta,
-                                                        folder=folder,
+                                                        modality=modality,
                                                         device=device,
                                                         )
         logger.info('Finished tripletizing data')
     else:
         train_triplets, test_triplets = load_data(
                                                   device=device,
-                                                  folder=folder,
+                                                  folder=triplets_dir,
                                                   )
     #number of unique items in the data matrix
     n_items = torch.max(train_triplets).item() + 1
@@ -170,27 +177,26 @@ def run(
     #cutoff for significance (checking if slope is significantly decreasing)
     pval_thres = .1
 
-    #l1-norm fraction to regularize loss
-    lmbda /= n_items
-
     #initialize model and optimizer
-    #if version == 'variational':
-    #    #variational version of SPoSE
-    #    model = VSPoSE(in_size=n_items, out_size=embed_dim)
-    #    k = 3 if task == 'odd_one_out' else 2
-    #    mu = torch.zeros(batch_size * k, embed_dim).to(device)
-    #    l = torch.ones(batch_size * k, embed_dim).mul(lmbda).to(device)
-    #    n_batches = len(train_batches) #for each mini-batch kld must be scaled by 1/B, where B = n_batches
-    #else:
-    #deterministic version of SPoSE
-    model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
+    if version == 'variational':
+        #variational version of SPoSE
+        model = VSPoSE(in_size=n_items, out_size=embed_dim)
+        k = 3 if task == 'odd_one_out' else 2
+        mu = torch.zeros(batch_size * k, embed_dim).to(device)
+        l = torch.ones(batch_size * k, embed_dim).mul(lmbda).to(device)
+        n_batches = len(train_batches) #for each mini-batch kld must be scaled by 1/B, where B = n_batches
+        #initialise optimizer
+        optim = AdamW(model.parameters(), lr=lr)
+    else:
+        #deterministic version of SPoSE
+        model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
+        #initialise optimizer
+        optim = Adam(model.parameters(), lr=lr)
 
-    #initialise optimizer
-    optim = Adam(model.parameters(), lr=lr)
     #move model to current device
     model.to(device)
 
-    model_path = os.path.join(results_dir, folder, version, str(lmbda),  'model')
+    model_path = os.path.join(results_dir, modality, version, str(lmbda), f'seed{rnd_seed:02d}', 'model')
     if os.path.exists(model_path):
         models = [m for m in os.listdir(model_path)]
         if len(models) > 0:
@@ -244,16 +250,22 @@ def run(
             optim.zero_grad() #zero out gradients
             batch = batch.to(device)
 
-            logits = model(batch)
+            if version == 'variational':
+                logits, z, mu_hat, l_hat = model(batch, device)
+            else:
+                logits = model(batch)
 
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
             #TODO: figure out why the line below is necessary if we don't use the variable probs anywhere else in the script
             #probs = trinomial_probs(anchor, positive, negative, task)
             c_entropy = trinomial_loss(anchor, positive, negative, task)
 
-            l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
-            pos_pen = torch.sum(F.relu(-model.fc.weight)) #positivity constraint to enforce non-negative values in our embedding matrix
-            loss = c_entropy + 0.01 * pos_pen + lmbda * l1_pen
+            if version == 'variational':
+                loss = c_entropy + (1/n_batches) * kld_online(mu_hat, l_hat, mu, l)
+            else:
+                l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
+                pos_pen = torch.sum(F.relu(-model.fc.weight)) #positivity constraint to enforce non-negative values in our embedding matrix
+                loss = c_entropy + 0.01 * pos_pen + (lmbda/n_items) * l1_pen
 
             loss.backward() #backpropagate loss into the network
             optim.step() #compute gradients and update weights accordingly
@@ -261,33 +273,18 @@ def run(
             batch_accs_train[i] += choice_accuracy(anchor, positive, negative, task)
             iter += 1
 
-        avg_train_loss = torch.mean(batch_losses_train)
-        avg_train_acc = torch.mean(batch_accs_train)
-        train_losses.append(avg_train_loss.item())
-        train_accs.append(avg_train_acc.item())
+        avg_train_loss = torch.mean(batch_losses_train).item()
+        avg_train_acc = torch.mean(batch_accs_train).item()
+        train_losses.append(avg_train_loss)
+        train_accs.append(avg_train_acc)
 
         ################################################
         ################ validation ####################
         ################################################
 
-        model.eval()
-        with torch.no_grad():
-            batch_losses_val = torch.zeros(len(val_batches))
-            batch_accs_val = torch.zeros(len(val_batches))
-            for j, batch in enumerate(val_batches):
-                batch = batch.to(device)
-
-                logits = model(batch)
-
-                anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
-                val_loss = trinomial_loss(anchor, positive, negative, task)
-                batch_losses_val[j] += val_loss.item()
-                batch_accs_val[j] += choice_accuracy(anchor, positive, negative, task)
-
-        avg_val_loss = torch.mean(batch_losses_val)
-        avg_val_acc = torch.mean(batch_accs_val)
-        val_losses.append(avg_val_loss.item())
-        val_accs.append(avg_val_acc.item())
+        avg_val_loss, avg_val_acc = validation(model, val_batches, version, task, device, embed_dim)
+        val_losses.append(avg_val_loss)
+        val_accs.append(avg_val_acc)
 
         logger.info('Epoch: {0}/{1}'.format(epoch + 1, epochs))
         logger.info('Train acc: {:.3f}'.format(avg_train_acc))
@@ -297,11 +294,12 @@ def run(
 
         if show_progress:
             print("========================================================================================================")
-            print('====== Epoch: {0}, Train acc: {1:.3f}, Train loss: {2:.3f}, Val acc: {3:.3f}, Val loss: {4:.3f} ======'.format(epoch + 1, avg_train_acc, avg_train_loss, avg_val_acc, avg_val_loss))
+            print(f'====== Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
             print("========================================================================================================")
+            print()
 
         if (epoch + 1) % 5 == 0:
-            PATH = os.path.join(results_dir, folder, version, str(lmbda))
+            PATH = os.path.join(results_dir, modality, version, str(lmbda), f'seed{rnd_seed:02d}')
             if not os.path.exists(PATH):
                 os.makedirs(PATH)
 
@@ -310,9 +308,15 @@ def run(
                 np.savetxt(os.path.join(PATH, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
                 logger.info(f'Saving model weights at epoch {epoch+1}')
 
+                current_d = get_nneg_dims(W)
+
                 if plot_dims:
-                    current_d = get_nneg_dims(W)
                     nneg_d_over_time.append((epoch+1, current_d))
+
+                print("========================================================================================================")
+                print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
+                print("========================================================================================================")
+                print()
 
             PATH = os.path.join(PATH, 'model')
             if not os.path.exists(PATH):
@@ -339,28 +343,48 @@ def run(
                 if (lmres.slope > 0) or (lmres.pvalue > pval_thres):
                     break
 
-    results[lmbda] = {
-                      'epoch': int(np.argmax(val_accs)+1),
-                      'train_acc': float(train_accs[np.argmax(val_accs)]),
-                      'val_acc': float(np.max(val_accs)),
-                      'val_loss': float(np.min(val_losses)),
-                      }
+    results[f'seed_{rnd_seed}'] = {
+                                  'epoch': int(np.argmax(val_accs)+1),
+                                  'train_acc': float(train_accs[np.argmax(val_accs)]),
+                                  'val_acc': float(np.max(val_accs)),
+                                  'val_loss': float(np.min(val_losses)),
+                                  }
     logger.info(f'Optimization finished after {epoch+1} epochs for lambda: {lmbda}')
 
     if plot_dims:
         if version == 'deterministic':
             logger.info(f'Plotting number of non-negative dimensions as a function of time for lambda: {lmbda}')
-            plot_nneg_dims_over_time(nneg_d_over_time, lmbda, folder, version)
+            plot_nneg_dims_over_time(
+                                    plots_dir=plots_dir,
+                                    nneg_d_over_time=nneg_d_over_time,
+                                    modality=modality,
+                                    version=version,
+                                    lmbda=lmbda,
+                                    rnd_seed=rnd_seed,
+                                    )
 
     logger.info('Plotting model performances over time across all lambda values')
-    plot_single_performance(val_accs, train_accs, lmbda, folder, version)
+    plot_single_performance(
+                            plots_dir=plots_dir,
+                            val_accs=val_accs,
+                            train_accs=train_accs,
+                            modality=modality,
+                            version=version,
+                            lmbda=lmbda,
+                            rnd_seed=rnd_seed,
+                            )
 
-    PATH = os.path.join(results_dir, folder, version, 'hyperparams')
+    PATH = os.path.join(results_dir, modality, version, str(lmbda), 'results.json')
     if not os.path.exists(PATH):
         os.makedirs(PATH)
+        with open(PATH, 'w') as results_file:
+            json.dump(results, results_file)
+    else:
+        with open(PATH, 'r') as results_file:
+            results.update(dict(json.load(results_file)))
 
-    with open(os.path.join(PATH, f'lambda_search_{lmbda:.7f}.json'), 'w') as results_file:
-        json.dump(results, results_file)
+        with open(PATH, 'w') as results_file:
+            json.dump(results, results_file)
 
 if __name__ == "__main__":
     #parse all arguments and set random seeds
@@ -387,17 +411,13 @@ if __name__ == "__main__":
     print(f'PyTorch CUDA version: {torch.version.cuda}')
     print()
 
-    results_dir = os.path.join(args.results_dir, f'seed{args.rnd_seed:02d}')
-    if not os.path.exists(results_dir):
-        os.makedirs(results_dir)
-
     if isinstance(args.tripletize, str):
-        if re.search(r'text', args.folder):
+        if re.search(r'text', args.modality):
             #NOTE: if you have an embedding matrix (i.e., an embedding per object), you can automatically tripletize the data (simply change .csv file)
-            embed_path = os.path.join(args.folder, 'sensevec.csv')
-        elif re.search(r'visual', args.folder):
+            embed_path = os.path.join(args.modality, 'sensevec.csv')
+        elif re.search(r'visual', args.modality):
             #NOTE: if you have a matrix of hidden unit activations per object, you can automatically tripletize the data (simply change .txt file)
-            embed_path = os.path.join(args.folder, 'activations.txt')
+            embed_path = os.path.join(args.modality, 'activations.txt')
     else:
         embed_path = None
 
@@ -405,7 +425,10 @@ if __name__ == "__main__":
         version=args.version,
         task=args.task,
         seed=args.rnd_seed,
-        folder=args.folder,
+        modality=args.modality,
+        results_dir=args.results_dir,
+        plots_dir=args.plots_dir,
+        triplets_dir=args.triplets_dir,
         device=device,
         batch_size=args.batch_size,
         embed_dim=args.embed_dim,
