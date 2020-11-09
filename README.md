@@ -32,7 +32,7 @@
 Here is an example call:
 
 ```
-python main.py --task odd_one_out --triplets_dir triplets/behavioral/ --modality behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 90 --batch_size 100 --epochs 500 --window_size 20 --sampling_method soft --p 0.7 --plot_dims --device cuda:0 --rnd_seed 42
+python main.py --task odd_one_out --triplets_dir ./triplets/behavioral/ --modality behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 90 --batch_size 100 --epochs 500 --window_size 20 --sampling_method soft --p 0.7 --plot_dims --device cuda:0 --rnd_seed 42
 ```
 
 #### NOTES:
