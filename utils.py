@@ -11,8 +11,6 @@ __all__ = [
             'get_digits',
             'get_nneg_dims',
             'get_results_files',
-            'kld_online',
-            'kld_offline',
             'load_data',
             'load_model',
             'load_weights',
@@ -210,12 +208,6 @@ def trinomial_probs(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.T
 def trinomial_loss(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str) -> torch.Tensor:
     sims = compute_similarities(anchor, positive, negative, method)
     return cross_entropy_loss(sims)
-
-def kld_online(mu_1:torch.Tensor, l_1:torch.Tensor, mu_2:torch.Tensor, l_2:torch.Tensor) -> torch.Tensor:
-    return torch.mean(torch.log(l_1/l_2) + (l_2/l_1) * torch.exp(-l_1 * torch.abs(mu_1-mu_2)) + l_2*torch.abs(mu_1-mu_2) - 1)
-
-def kld_offline(mu_1:torch.Tensor, b_1:torch.Tensor, mu_2:torch.Tensor, b_2:torch.Tensor) -> torch.Tensor:
-    return torch.log(b_2/b_1) + (b_1/b_2) * torch.exp(-torch.abs(mu_1-mu_2)/b_1) + torch.abs(mu_1-mu_2)/b_2 - 1
 
 def get_nneg_dims(W:torch.Tensor, eps:float=0.1) -> int:
     w_max = W.max(dim=1)[0]
