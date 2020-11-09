@@ -175,21 +175,10 @@ def run(
     #cutoff for significance (checking if slope is significantly decreasing)
     pval_thres = .1
 
-    #initialize model and optimizer
-    if version == 'variational':
-        #variational version of SPoSE
-        model = VSPoSE(in_size=n_items, out_size=embed_dim)
-        k = 3 if task == 'odd_one_out' else 2
-        mu = torch.zeros(batch_size * k, embed_dim).to(device)
-        l = torch.ones(batch_size * k, embed_dim).mul(lmbda).to(device)
-        n_batches = len(train_batches) #for each mini-batch kld must be scaled by 1/B, where B = n_batches
-        #initialise optimizer
-        optim = AdamW(model.parameters(), lr=lr)
-    else:
-        #deterministic version of SPoSE
-        model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
-        #initialise optimizer
-        optim = Adam(model.parameters(), lr=lr)
+    #deterministic version of SPoSE
+    model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
+    #initialise optimizer
+    optim = Adam(model.parameters(), lr=lr)
 
     #move model to current device
     model.to(device)
@@ -269,24 +258,14 @@ def run(
         for i, batch in enumerate(train_batches):
             optim.zero_grad() #zero out gradients
             batch = batch.to(device)
-
-            if version == 'variational':
-                logits, z, mu_hat, l_hat = model(batch, device)
-            else:
-                logits = model(batch)
-
+            logits = model(batch)
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
             #TODO: figure out why the line below is necessary if we don't use the variable probs anywhere else in the script
             #probs = trinomial_probs(anchor, positive, negative, task)
             c_entropy = trinomial_loss(anchor, positive, negative, task)
-
-            if version == 'variational':
-                loss = c_entropy + (1/n_batches) * kld_online(mu_hat, l_hat, mu, l)
-            else:
-                l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
-                pos_pen = torch.sum(F.relu(-model.fc.weight)) #positivity constraint to enforce non-negative values in our embedding matrix
-                loss = c_entropy + 0.01 * pos_pen + (lmbda/n_items) * l1_pen
-
+            l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
+            pos_pen = torch.sum(F.relu(-model.fc.weight)) #positivity constraint to enforce non-negative values in our embedding matrix
+            loss = c_entropy + 0.01 * pos_pen + (lmbda/n_items) * l1_pen
             loss.backward() #backpropagate loss into the network
             optim.step() #compute gradients and update weights accordingly
             batch_losses_train[i] += loss.item()
