@@ -16,14 +16,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-def plot_nneg_dims_over_time(
-                            plots_dir:str,
-                            nneg_d_over_time:list,
-                            modality:str,
-                            version:str,
-                            lmbda:float,
-                            rnd_seed:int,
-) -> None:
+def plot_nneg_dims_over_time(plots_dir:str, nneg_d_over_time:list) -> None:
     """plot number of non-negative dimensions as a function of time (i.e., epochs)"""
     fig = plt.figure(figsize=(10, 6), dpi=100)
     ax = plt.subplot(111)
@@ -43,23 +36,14 @@ def plot_nneg_dims_over_time(
     ax.set_xlabel('Epochs')
     ax.set_ylabel('Number of non-negative dimensions')
 
-    dir = os.path.join(plots_dir, modality, version, lmbda, f'seed{rnd_seed}', 'nneg_dimensions')
-    if not os.path.exists(dir):
-        os.makedirs(dir)
+    PATH = os.path.join(plots_dir, 'nneg_dimensions')
+    if not os.path.exists(PATH):
+        os.makedirs(PATH)
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(dir, 'nneg_dimensions_over_time.png'))
+    plt.savefig(os.path.join(PATH, 'nneg_dimensions_over_time.png'))
     plt.close()
 
-def plot_single_performance(
-                            plots_dir:str,
-                            val_accs:list,
-                            train_accs:list,
-                            modality:str,
-                            version:str,
-                            lmbda:float,
-                            rnd_seed:int,
-) -> None:
+def plot_single_performance(plots_dir:str, val_accs:list, train_accs:list) -> None:
     fig = plt.figure(figsize=(10, 6), dpi=100)
     ax = plt.subplot(111)
 
@@ -80,22 +64,18 @@ def plot_single_performance(
     ax.set_title(f'Lambda-L1: {lmbda}')
     ax.legend(fancybox=True, shadow=True, loc='lower left')
 
-    dir = os.path.join(plots_dir, modality, version, lmbda, f'{rnd_seed}', 'grid_search')
-    if not os.path.exists(dir):
-        os.makedirs(dir)
+    PATH = os.path.join(plots_dir, 'grid_search')
+    if not os.path.exists(PATH):
+        os.makedirs(PATH)
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(dir, 'single_model_performance_over_time.png'))
+    plt.savefig(os.path.join(PATH, 'single_model_performance_over_time.png'))
     plt.close()
 
 def plot_multiple_performances(
+                                plots_dir:str,
                                 val_accs:list,
                                 train_accs:list,
                                 lambdas:np.ndarray,
-                                modality:str,
-                                version:str,
-                                lmbda:float,
-                                rnd_seed:int,
 ) -> None:
     n_rows = len(lambdas) // 2
     n_cols = n_rows
@@ -127,12 +107,11 @@ def plot_multiple_performances(
     for ax in axes.flat:
         ax.label_outer()
 
-    dir = os.path.join(plots_dir, modality, version, lmbda, f'{rnd_seed}', 'grid_search')
-    if not os.path.exists(dir):
-        os.makedirs(dir)
+    PATH = os.path.join(plots_dir, 'grid_search')
+    if not os.path.exists(PATH):
+        os.makedirs(PATH)
 
-    fig.tight_layout()
-    plt.savefig(os.path.join(dir, 'model_performances_over_time.png'))
+    plt.savefig(os.path.join(PATH, 'model_performances_over_time.png'))
     plt.close()
 
 def plot_grid_search_results(

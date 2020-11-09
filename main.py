@@ -42,9 +42,9 @@ def parseargs():
     aa('--triplets_dir', type=str, default=None,
         help='in case you have tripletized data, provide directory from where to load triplets')
     aa('--results_dir', type=str, default='./results/',
-         help='optional specification of results directory (if not provided will resort to ./results/)')
+         help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/seed/)')
     aa('--plots_dir', type=str, default='./plots/',
-        help='optional specification of directory for plots (if not provided will resort to ./plots/)')
+        help='optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/seed/)')
     aa('--tripletize', type=str, default=None,
         choices=[None, 'deterministic', 'probabilistic'],
         help='whether to deterministically (argmax) or probabilistically (conditioned on PMF) sample odd-one-out choices')
@@ -146,10 +146,8 @@ def run(
                                                         )
         logger.info('Finished tripletizing data')
     else:
-        train_triplets, test_triplets = load_data(
-                                                  device=device,
-                                                  folder=triplets_dir,
-                                                  )
+        train_triplets, test_triplets = load_data(device=device, folder=triplets_dir)
+
     #number of unique items in the data matrix
     n_items = torch.max(train_triplets).item() + 1
     #initialize an identity matrix of size n_items x n_items for one-hot-encoding of triplets
@@ -196,14 +194,35 @@ def run(
     #move model to current device
     model.to(device)
 
-    model_path = os.path.join(results_dir, modality, version, str(lmbda), f'seed{rnd_seed:02d}', 'model')
-    if os.path.exists(model_path):
-        models = [m for m in os.listdir(model_path)]
+    ################################################
+    ############# Creating PATHs ###################
+    ################################################
+
+    print(f'...Creating PATHs')
+    print()
+    if results_dir == './results/':
+        results_dir = os.path.join(results_dir, modality, version, str(lmbda), f'seed{rnd_seed:02d}')
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+
+    if plots_dir == './plots/':
+        plots_dir = os.path.join(plots_dir, modality, version, str(lmbda), f'seed{rnd_seed}')
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
+
+    model_dir = os.path.join(results_dir, 'model')
+
+    #####################################################################
+    ######### Load model from previous checkpoint, if available #########
+    #####################################################################
+
+    if os.path.exists(model_dir):
+        models = [m for m in os.listdir(model_dir)]
         if len(models) > 0:
             try:
                 checkpoints = list(map(lambda m: get_digits(m), models))
                 last_checkpoint = np.argmax(checkpoints)
-                PATH = os.path.join(model_path, models[last_checkpoint])
+                PATH = os.path.join(model_dir, models[last_checkpoint])
                 checkpoint = torch.load(PATH)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optim.load_state_dict(checkpoint['optim_state_dict'])
@@ -224,18 +243,20 @@ def run(
                 train_losses, val_losses = [], []
                 nneg_d_over_time = []
         else:
+            os.makedirs(model_dir)
             start = 0
             train_accs, val_accs = [], []
             train_losses, val_losses = [], []
             nneg_d_over_time = []
     else:
+        os.makedirs(model_dir)
         start = 0
         train_accs, val_accs = [], []
         train_losses, val_losses = [], []
         nneg_d_over_time = []
 
     ################################################
-    ################## training ####################
+    ################## Training ####################
     ################################################
 
     iter = 0
@@ -299,13 +320,9 @@ def run(
             print()
 
         if (epoch + 1) % 5 == 0:
-            PATH = os.path.join(results_dir, modality, version, str(lmbda), f'seed{rnd_seed:02d}')
-            if not os.path.exists(PATH):
-                os.makedirs(PATH)
-
             if version == 'deterministic':
                 W = model.fc.weight
-                np.savetxt(os.path.join(PATH, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
+                np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
                 logger.info(f'Saving model weights at epoch {epoch+1}')
 
                 current_d = get_nneg_dims(W)
@@ -317,10 +334,6 @@ def run(
                 print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
                 print("========================================================================================================")
                 print()
-
-            PATH = os.path.join(PATH, 'model')
-            if not os.path.exists(PATH):
-                os.makedirs(PATH)
 
             #save model and optim parameters for inference or to resume training
             #PyTorch convention is to save checkpoints as .tar files
@@ -334,7 +347,8 @@ def run(
                         'val_losses': val_losses,
                         'val_accs': val_accs,
                         'nneg_d_over_time': nneg_d_over_time,
-                        }, os.path.join(PATH, f'model_epoch{epoch+1:04d}.tar'))
+                        }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
+
             logger.info(f'Saving model parameters at epoch {epoch+1}')
 
             if (epoch + 1) > window_size:
@@ -354,29 +368,13 @@ def run(
     if plot_dims:
         if version == 'deterministic':
             logger.info(f'Plotting number of non-negative dimensions as a function of time for lambda: {lmbda}')
-            plot_nneg_dims_over_time(
-                                    plots_dir=plots_dir,
-                                    nneg_d_over_time=nneg_d_over_time,
-                                    modality=modality,
-                                    version=version,
-                                    lmbda=lmbda,
-                                    rnd_seed=rnd_seed,
-                                    )
+            plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
 
     logger.info('Plotting model performances over time across all lambda values')
-    plot_single_performance(
-                            plots_dir=plots_dir,
-                            val_accs=val_accs,
-                            train_accs=train_accs,
-                            modality=modality,
-                            version=version,
-                            lmbda=lmbda,
-                            rnd_seed=rnd_seed,
-                            )
+    plot_single_performance(plots_dir=plots_dir, val_accs=val_accs, train_accs=train_accs)
 
-    PATH = os.path.join(results_dir, modality, version, str(lmbda), 'results.json')
+    PATH = os.path.join(results_dir, 'results.json')
     if not os.path.exists(PATH):
-        os.makedirs(PATH)
         with open(PATH, 'w') as results_file:
             json.dump(results, results_file)
     else:
