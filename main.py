@@ -42,9 +42,9 @@ def parseargs():
     aa('--triplets_dir', type=str, default=None,
         help='in case you have tripletized data, provide directory from where to load triplets')
     aa('--results_dir', type=str, default='./results/',
-         help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/seed/)')
+         help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/rnd_seed/)')
     aa('--plots_dir', type=str, default='./plots/',
-        help='optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/seed/)')
+        help='optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/rnd_seed/)')
     aa('--tripletize', type=str, default=None,
         choices=[None, 'deterministic', 'probabilistic'],
         help='whether to deterministically (argmax) or probabilistically (conditioned on PMF) sample odd-one-out choices')
@@ -101,7 +101,7 @@ def setup_logging(file:str, dir:str='./log_files/'):
 def run(
         version:str,
         task:str,
-        seed:int,
+        rnd_seed:int,
         modality:str,
         results_dir:str,
         plots_dir:str,
@@ -146,7 +146,7 @@ def run(
                                                         )
         logger.info('Finished tripletizing data')
     else:
-        train_triplets, test_triplets = load_data(device=device, folder=triplets_dir)
+        train_triplets, test_triplets = load_data(device=device, triplets_dir=triplets_dir)
 
     #number of unique items in the data matrix
     n_items = torch.max(train_triplets).item() + 1
@@ -243,7 +243,6 @@ def run(
                 train_losses, val_losses = [], []
                 nneg_d_over_time = []
         else:
-            os.makedirs(model_dir)
             start = 0
             train_accs, val_accs = [], []
             train_losses, val_losses = [], []
@@ -422,7 +421,7 @@ if __name__ == "__main__":
     run(
         version=args.version,
         task=args.task,
-        seed=args.rnd_seed,
+        rnd_seed=args.rnd_seed,
         modality=args.modality,
         results_dir=args.results_dir,
         plots_dir=args.plots_dir,
