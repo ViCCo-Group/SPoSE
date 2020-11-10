@@ -43,7 +43,12 @@ def plot_nneg_dims_over_time(plots_dir:str, nneg_d_over_time:list) -> None:
     plt.savefig(os.path.join(PATH, 'nneg_dimensions_over_time.png'))
     plt.close()
 
-def plot_single_performance(plots_dir:str, val_accs:list, train_accs:list) -> None:
+def plot_single_performance(
+                            plots_dir:str,
+                            val_accs:list,
+                            train_accs:list,
+                            lmbda:float,
+                            ) -> None:
     fig = plt.figure(figsize=(10, 6), dpi=100)
     ax = plt.subplot(111)
 
@@ -61,7 +66,7 @@ def plot_single_performance(plots_dir:str, val_accs:list, train_accs:list) -> No
     ax.set_xlim([0, len(val_accs)])
     ax.set_xlabel(r'Epochs')
     ax.set_ylabel(r'Accuracy')
-    ax.set_title(f'Lambda-L1: {lmbda}')
+    ax.set_title(f'$\lambda$ = {lmbda:.5f}')
     ax.legend(fancybox=True, shadow=True, loc='lower left')
 
     PATH = os.path.join(plots_dir, 'grid_search')

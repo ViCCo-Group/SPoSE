@@ -61,7 +61,7 @@ def parseargs():
         help='number of triplets in each mini-batch')
     aa('--epochs', metavar='T', type=int, default=500,
         help='maximum number of epochs to optimize SPoSE model for')
-    aa('--window_size', type=int, default=20,
+    aa('--window_size', type=int, default=30,
         help='window size to be used for checking convergence criterion with linear regression')
     aa('--sampling_method', type=str, default='normal',
         choices=['normal', 'soft'],
@@ -349,7 +349,7 @@ def run(
             plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
 
     logger.info('Plotting model performances over time across all lambda values')
-    plot_single_performance(plots_dir=plots_dir, val_accs=val_accs, train_accs=train_accs)
+    plot_single_performance(plots_dir=plots_dir, val_accs=val_accs, train_accs=train_accs, lmbda=lmbda)
 
     PATH = os.path.join(results_dir, 'results.json')
     if not os.path.exists(PATH):
