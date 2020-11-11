@@ -335,12 +335,12 @@ def run(
                 if (lmres.slope > 0) or (lmres.pvalue > pval_thres):
                     break
 
-    results = {
-              'epoch': int(np.argmax(val_accs)+1),
-              'train_acc': float(train_accs[np.argmax(val_accs)]),
-              'val_acc': float(np.max(val_accs)),
-              'val_loss': float(np.min(val_losses)),
-              }
+    results[f'seed_{rnd_seed}'] = {
+                                  'epoch': int(np.argmax(val_accs)+1),
+                                  'train_acc': float(train_accs[np.argmax(val_accs)]),
+                                  'val_acc': float(np.max(val_accs)),
+                                  'val_loss': float(np.min(val_losses)),
+                                  }
     logger.info(f'Optimization finished after {epoch+1} epochs for lambda: {lmbda}')
 
     if plot_dims:

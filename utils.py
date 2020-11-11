@@ -283,11 +283,6 @@ def merge_dicts(files:list) -> dict:
     results = sort_results(results)
     return results
 
-def get_best_lambda(results:dict) -> float:
-    lambdas = np.array(list(results.keys())).astype(float)
-    val_accs = [v['val_acc'] for k, v in results.items()]
-    return lambdas[np.argmax(val_accs)]
-
 def load_model(
                 model,
                 results_dir:str,
