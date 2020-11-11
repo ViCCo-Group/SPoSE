@@ -42,7 +42,7 @@ def parseargs():
     aa('--triplets_dir', type=str, default=None,
         help='in case you have tripletized data, provide directory from where to load triplets')
     aa('--results_dir', type=str, default='./results/',
-         help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/rnd_seed/)')
+        help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/rnd_seed/)')
     aa('--plots_dir', type=str, default='./plots/',
         help='optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/rnd_seed/)')
     aa('--tripletize', type=str, default=None,
