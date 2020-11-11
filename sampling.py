@@ -54,13 +54,13 @@ def run(
         rnd_seed:int,
         device:torch.device,
 ) -> None:
-    #load test triplets
+    #load train triplets
     train_triplets, _ = load_data(device=device, triplets_dir=os.path.join(triplets_dir, modality))
     #number of unique items in the data matrix
     n_items = torch.max(train_triplets).item() + 1
     #initialize an identity matrix of size n_items x n_items for one-hot-encoding of triplets
     I = torch.eye(n_items)
-    #get mini-batches for validation
+    #get mini-batches for training to sample an equally sized synthetic dataset
     train_batches = BatchGenerator(I=I, dataset=train_triplets, batch_size=batch_size, sampling_method=None, p=None)
     #initialise model
     for i in range(n_samples):
@@ -81,7 +81,7 @@ def run(
                            )
         #move model to current device
         model.to(device)
-        #probabilistically sample triplet choices given model ouput PMFs
+        #probabilistically sample triplet choices given the model's ouput PMFs
         sampled_choices = validation(
                                     model=model,
                                     val_batches=train_batches,
