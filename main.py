@@ -141,7 +141,7 @@ def run(
                                                         n_samples=n_samples,
                                                         sampling_constant=sampling_constant,
                                                         beta=beta,
-                                                        modality=modality,
+                                                        folder=modality,
                                                         device=device,
                                                         )
         logger.info('Finished tripletizing data')
