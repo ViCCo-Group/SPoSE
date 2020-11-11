@@ -6,10 +6,12 @@ __all__ = [
             'choice_accuracy',
             'cross_entropy_loss',
             'encode_as_onehot',
+            'get_best_lambda',
             'get_digits',
             'get_nneg_dims',
             'get_results_files',
             'load_data',
+            'load_model',
             'merge_dicts',
             'softmax',
             'trinomial_loss',
@@ -264,9 +266,9 @@ def get_results_files(
 ) -> list:
     if modality == 'visual':
         assert isinstance(vision_model, str) and isinstance(layer, str), 'name of vision model and layer are required'
-        PATH = os.path.join(results_dir, f'seed{rnd_seed}', modality, vision_model, layer, version, subfolder)
+        PATH = os.path.join(results_dir, modality, vision_model, layer, version, f'{dim}d', f'{lmbda}', f'seed{rnd_seed}', subfolder)
     else:
-        PATH = os.path.join(results_dir, f'seed{rnd_seed}', modality, version, subfolder)
+        PATH = os.path.join(results_dir, modality, version, f'{dim}d', f'{lmbda}', f'seed{rnd_seed}', subfolder)
     files = [os.path.join(PATH, f) for f in os.listdir(PATH) if f.endswith('.json')]
     return files
 
@@ -281,3 +283,28 @@ def merge_dicts(files:list) -> dict:
             results.update(dict(json.load(f)))
     results = sort_results(results)
     return results
+
+def get_best_lambda(results:dict) -> float:
+    lambdas = np.array(list(results.keys())).astype(float)
+    val_accs = [v['val_acc'] for k, v in results.items()]
+    return lambdas[np.argmax(val_accs)]
+
+def load_model(
+                model,
+                results_dir:str,
+                modality:str,
+                version:str,
+                dim:int,
+                lmbda:float,
+                rnd_seed:int,
+                device:torch.device,
+                subfolder:str='model',
+):
+    model_path = os.path.join(results_dir, modality, version, f'{dim}d', f'{lmbda}', f'seed{rnd_seed}', subfolder)
+    models = os.listdir(model_path)
+    checkpoints = list(map(get_digits, models))
+    last_checkpoint = np.argmax(checkpoints)
+    PATH = os.path.join(model_path, models[last_checkpoint])
+    checkpoint = torch.load(PATH, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    return model
