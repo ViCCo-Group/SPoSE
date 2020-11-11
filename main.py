@@ -352,15 +352,8 @@ def run(
     plot_single_performance(plots_dir=plots_dir, val_accs=val_accs, train_accs=train_accs, lmbda=lmbda)
 
     PATH = os.path.join(results_dir, 'results.json')
-    if not os.path.exists(PATH):
-        with open(PATH, 'w') as results_file:
-            json.dump(results, results_file)
-    else:
-        with open(PATH, 'r') as results_file:
-            results.update(dict(json.load(results_file)))
-
-        with open(PATH, 'w') as results_file:
-            json.dump(results, results_file)
+    with open(PATH, 'w') as results_file:
+        json.dump(results, results_file)
 
 if __name__ == "__main__":
     #parse all arguments and set random seeds
