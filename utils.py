@@ -6,7 +6,6 @@ __all__ = [
             'choice_accuracy',
             'cross_entropy_loss',
             'encode_as_onehot',
-            'get_best_lambda',
             'get_digits',
             'get_nneg_dims',
             'get_results_files',
@@ -222,7 +221,11 @@ def validation(
                 task:str,
                 device:torch.device,
                 embed_dim:int,
-                ) -> Tuple[float, float]:
+                sampling:bool=False,
+                ):
+    if sampling:
+        sampled_choices = np.zeros((len(val_batches), 3))
+
     model.eval()
     with torch.no_grad():
         batch_losses_val = torch.zeros(len(val_batches))
@@ -234,10 +237,22 @@ def validation(
                 logits, _, _, _ = model(batch, device)
             else:
                 logits = model(batch)
+
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
-            val_loss = trinomial_loss(anchor, positive, negative, task)
-            batch_losses_val[j] += val_loss.item()
-            batch_accs_val[j] += choice_accuracy(anchor, positive, negative, task)
+
+            if sampling:
+                similarities = compute_similarities(anchor, positive, negative, method)
+                probas = F.softmax(torch.stack(sims, dim=-1), dim=0).numpy()
+                human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
+                model_choices = np.array([np.flip(np.random.choice(h_choice, size=len(h_choice), replace=False, p=p)) for h_choice, p in zip(human_choices, probas)])
+                sampled_choices[j*batch_size:(j+1)*batch_size] = model_choices
+            else:
+                val_loss = trinomial_loss(anchor, positive, negative, task)
+                batch_losses_val[j] += val_loss.item()
+                batch_accs_val[j] += choice_accuracy(anchor, positive, negative, task)
+
+    if sampling:
+        return sampled_choices
 
     avg_val_loss = torch.mean(batch_losses_val).item()
     avg_val_acc = torch.mean(batch_accs_val).item()
