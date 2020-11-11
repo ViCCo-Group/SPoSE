@@ -190,12 +190,12 @@ def run(
     print(f'...Creating PATHs')
     print()
     if results_dir == './results/':
-        results_dir = os.path.join(results_dir, modality, version, str(lmbda), f'seed{rnd_seed:02d}')
+        results_dir = os.path.join(results_dir, modality, version, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed:02d}')
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
     if plots_dir == './plots/':
-        plots_dir = os.path.join(plots_dir, modality, version, str(lmbda), f'seed{rnd_seed}')
+        plots_dir = os.path.join(plots_dir, modality, version, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed}')
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
@@ -206,7 +206,7 @@ def run(
     #####################################################################
 
     if os.path.exists(model_dir):
-        models = [m for m in os.listdir(model_dir)]
+        models = [m for m in os.listdir(model_dir) if m.endswith('.tar')]
         if len(models) > 0:
             try:
                 checkpoints = list(map(lambda m: get_digits(m), models))
