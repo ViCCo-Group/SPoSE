@@ -257,7 +257,6 @@ def get_digits(string:str) -> int:
 
 def get_results_files(
                       results_dir:str,
-                      rnd_seed:int,
                       modality:str,
                       version:str,
                       subfolder:str,
@@ -266,10 +265,10 @@ def get_results_files(
 ) -> list:
     if modality == 'visual':
         assert isinstance(vision_model, str) and isinstance(layer, str), 'name of vision model and layer are required'
-        PATH = os.path.join(results_dir, modality, vision_model, layer, version, f'{dim}d', f'{lmbda}', f'seed{rnd_seed}', subfolder)
+        PATH = os.path.join(results_dir, modality, vision_model, layer, version, f'{dim}d', f'{lmbda}')
     else:
-        PATH = os.path.join(results_dir, modality, version, f'{dim}d', f'{lmbda}', f'seed{rnd_seed}', subfolder)
-    files = [os.path.join(PATH, f) for f in os.listdir(PATH) if f.endswith('.json')]
+        PATH = os.path.join(results_dir, modality, version, f'{dim}d', f'{lmbda}')
+    files = [os.path.join(PATH, seed, f) for seed in os.listdir(PATH) for f in os.listdir(os.path.join(PATH, seed)) if f.endswith('.json')]
     return files
 
 def sort_results(results:dict) -> dict:

@@ -335,12 +335,12 @@ def run(
                 if (lmres.slope > 0) or (lmres.pvalue > pval_thres):
                     break
 
-    results[f'seed_{rnd_seed}'] = {
-                                  'epoch': int(np.argmax(val_accs)+1),
-                                  'train_acc': float(train_accs[np.argmax(val_accs)]),
-                                  'val_acc': float(np.max(val_accs)),
-                                  'val_loss': float(np.min(val_losses)),
-                                  }
+    results = {
+              'epoch': int(np.argmax(val_accs)+1),
+              'train_acc': float(train_accs[np.argmax(val_accs)]),
+              'val_acc': float(np.max(val_accs)),
+              'val_loss': float(np.min(val_losses)),
+              }
     logger.info(f'Optimization finished after {epoch+1} epochs for lambda: {lmbda}')
 
     if plot_dims:
@@ -352,15 +352,8 @@ def run(
     plot_single_performance(plots_dir=plots_dir, val_accs=val_accs, train_accs=train_accs, lmbda=lmbda)
 
     PATH = os.path.join(results_dir, 'results.json')
-    if not os.path.exists(PATH):
-        with open(PATH, 'w') as results_file:
-            json.dump(results, results_file)
-    else:
-        with open(PATH, 'r') as results_file:
-            results.update(dict(json.load(results_file)))
-
-        with open(PATH, 'w') as results_file:
-            json.dump(results, results_file)
+    with open(PATH, 'w') as results_file:
+        json.dump(results, results_file)
 
 if __name__ == "__main__":
     #parse all arguments and set random seeds
