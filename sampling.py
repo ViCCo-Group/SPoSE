@@ -3,15 +3,14 @@
 
 import argparse
 import os
+import random
 import re
 import torch
 
 import numpy as np
-import torch.nn as nn
-import torch.nn.functional as F
 
-from utils import *
-from models.model import *
+from utils import BatchGenerator, load_data, load_model, validation
+from models.model import SPoSE, VSPoSE
 
 os.environ['PYTHONIOENCODING']='UTF-8'
 
