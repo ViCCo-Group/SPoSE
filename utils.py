@@ -237,10 +237,10 @@ def validation(
 
             if version == 'variational':
                 logits, _, _, _ = model(batch, device)
+                anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
             else:
                 logits = model(batch)
-
-            anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
+                anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[1])), dim=1)
 
             if sampling:
                 similarities = compute_similarities(anchor, positive, negative, task)
