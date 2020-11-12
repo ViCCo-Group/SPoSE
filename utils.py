@@ -222,9 +222,11 @@ def validation(
                 device:torch.device,
                 embed_dim:int,
                 sampling:bool=False,
+                batch_size=None,
                 ):
     if sampling:
-        sampled_choices = np.zeros((len(val_batches), 3), dtype=int)
+        assert isinstance(batch_size, int), 'batch size must be defined'
+        sampled_choices = np.zeros((int(len(val_batches) * batch_size), 3), dtype=int)
 
     model.eval()
     with torch.no_grad():
@@ -241,8 +243,8 @@ def validation(
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
 
             if sampling:
-                similarities = compute_similarities(anchor, positive, negative, method)
-                probas = F.softmax(torch.stack(sims, dim=-1), dim=1).numpy()
+                similarities = compute_similarities(anchor, positive, negative, task)
+                probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).numpy()
                 human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
                 model_choices = np.array([np.flip(np.random.choice(h_choice, size=len(h_choice), replace=False, p=p)) for h_choice, p in zip(human_choices, probas)])
                 sampled_choices[j*batch_size:(j+1)*batch_size] += model_choices

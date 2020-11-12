@@ -18,6 +18,8 @@ def parseargs():
     parser = argparse.ArgumentParser()
     def aa(*args, **kwargs):
         parser.add_argument(*args, **kwargs)
+    aa('--n_samples', type=int, default=1,
+        help='define how many different synthetic triplet datasets you would like to sample')
     aa('--version', type=str, default='deterministic',
         choices=['deterministic', 'variational'],
         help='whether to apply a deterministic or variational version of SPoSE')
@@ -32,6 +34,9 @@ def parseargs():
         help='optional specification of results directory (if not provided will resort to ./results/modality/version/dim/lambda/rnd_seed/)')
     aa('--embed_dim', metavar='D', type=int, default=90,
         help='dimensionality of the embedding matrix (i.e., out_size of model)')
+    aa('--batch_size', metavar='B', type=int, default=100,
+        choices=[16, 25, 32, 50, 64, 100, 128, 150, 200, 256],
+        help='number of triplets in each mini-batch')
     aa('--lmbda', type=float,
         help='lambda value determines scale of l1 regularization')
     aa('--device', type=str, default='cpu',
@@ -46,6 +51,7 @@ def run(
         version:str,
         task:str,
         modality:str,
+        results_dir:str,
         triplets_dir:str,
         lmbda:float,
         batch_size:int,
@@ -80,7 +86,7 @@ def run(
                            )
         #move model to current device
         model.to(device)
-        #probabilistically sample triplet choices given the model's ouput PMFs
+        #probabilistically sample triplet choices given model ouput PMFs
         sampled_choices = validation(
                                     model=model,
                                     val_batches=train_batches,
@@ -89,9 +95,13 @@ def run(
                                     device=device,
                                     embed_dim=embed_dim,
                                     sampling=True,
+                                    batch_size=batch_size,
                                     )
 
-        np.savetxt(f'./triplets/synthetic/sample_{i:02d}/train_90.txt', sampled_choices)
+        PATH = os.path.join(triplets_dir, 'synthetic', f'sample_{i+1:02d}')
+        if not os.path.exists(PATH):
+            os.makedirs(PATH)
+        np.savetxt(os.path.join(PATH, 'train_90.txt'), sampled_choices)
 
 if __name__ == '__main__':
     #parse all arguments and set random seeds
@@ -123,6 +133,7 @@ if __name__ == '__main__':
         version=args.version,
         task=args.task,
         modality=args.modality,
+        results_dir=args.results_dir,
         triplets_dir=args.triplets_dir,
         lmbda=args.lmbda,
         embed_dim=args.embed_dim,
