@@ -261,8 +261,9 @@ def validation(
             if sampling:
                 similarities = compute_similarities(anchor, positive, negative, task)
                 probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).numpy()
+                probas = probas[:, ::-1]
                 human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
-                model_choices = np.array([np.random.choice(h_choice, size=len(p), replace=False, p=p[::-1])[::-1] for h_choice, p in zip(human_choices, probas)])
+                model_choices = np.array([np.random.choice(h_choice, size=len(p), replace=False, p=p)[::-1] for h_choice, p in zip(human_choices, probas)])
                 sampled_choices[j*batch_size:(j+1)*batch_size] += model_choices
             else:
                 val_loss = trinomial_loss(anchor, positive, negative, task)
