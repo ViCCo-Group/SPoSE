@@ -11,9 +11,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torch.distributions.laplace import Laplace
-from typing import Tuple
-
 class SPoSE(nn.Module):
 
     def __init__(
