@@ -144,7 +144,7 @@ def tripletize_data(
             choices = odd_one_outs[np.argsort(sims)]
         triplets[idx] = choices
 
-    PATH = dir + folder
+    PATH = os.path.join(dir, folder)
     if not os.path.exists(PATH):
         os.makedirs(PATH)
 
@@ -152,13 +152,16 @@ def tripletize_data(
     train_triplets = triplets[rnd_indices[:int(len(rnd_indices)*.9)]]
     test_triplets = triplets[rnd_indices[int(len(rnd_indices)*.9):]]
 
-    np.savetxt(PATH + 'train_90.txt', train_triplets)
-    np.savetxt(PATH + 'test_10.txt', test_triplets)
+    with open(os.path.join(PATH, 'train_90.npy'), 'wb') as train_file:
+        np.save(train_file, train_triplets)
+
+    with open(os.path.join(PATH, 'test_10.npy'), 'wb') as test_file:
+        np.save(test_file, test_triplets)
 
     if method == 'probabilistic':
         avg_p = np.mean(max_probas)
         print('==================================================================================')
-        print('===== Average maximum probability value (ceiling model performance): {0:.2f} ====='.format(avg_p))
+        print(f'===== Average maximum probability value (ceiling model performance): {avg_p:.2f} =====')
         print('==================================================================================')
         print()
 
@@ -168,8 +171,21 @@ def tripletize_data(
     return train_triplets, test_triplets
 
 def load_data(device:torch.device, triplets_dir:str) -> Tuple[torch.Tensor, torch.Tensor]:
-    train_triplets = torch.from_numpy(np.loadtxt(os.path.join(triplets_dir, 'train_90.txt'))).to(device).type(torch.LongTensor)
-    test_triplets = torch.from_numpy(np.loadtxt(os.path.join(triplets_dir, 'test_10.txt'))).to(device).type(torch.LongTensor)
+    """load train and test triplet datasets into memory"""
+    try:
+        with open(os.path.join(triplets_dir, 'train_90.npy'), 'rb') as train_file:
+            train_triplets = torch.from_numpy(np.load(train_file)).to(device).type(torch.LongTensor)
+
+        with open(os.path.join(test_triplets_dir, 'test_10.npy'), 'rb') as test_file:
+            test_triplets = torch.from_numpy(np.load(test_file)).to(device).type(torch.LongTensor)
+    except FileNotFoundError:
+        print('...Could not find any .npy files for current modality')
+        print('...Now searching for .txt files')
+        print()
+        train_triplets = torch.from_numpy(np.loadtxt(os.path.join(triplets_dir, 'train_90.txt'))).to(device).type(torch.LongTensor)
+        if re.search(r'synthetic', triplets_dir):
+            triplets_dir = os.path.join('./triplets', 'behavioral')
+        test_triplets = torch.from_numpy(np.loadtxt(os.path.join(triplets_dir, 'test_10.txt'))).to(device).type(torch.LongTensor)
     return train_triplets, test_triplets
 
 def encode_as_onehot(I:torch.Tensor, triplets:torch.Tensor) -> torch.Tensor:
