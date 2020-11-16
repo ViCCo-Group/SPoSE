@@ -130,8 +130,8 @@ def run(
         assert isinstance(embed_path, str), 'PATH from where to load neural activations or word embeddings must be defined'
         logger.info(f'Started tripletizing data with {tripletize} sampling of odd-one-out choices')
         if re.search(r'visual', modality):
-            n_samples = 2.0e+7
-            sampling_constant = 2.0e+6
+            n_samples = 1.0e+8
+            sampling_constant = 1.0e+7
         elif re.search(r'text', modality):
             n_samples = 1.5e+6
             sampling_constant = 1.5e+5
@@ -149,7 +149,9 @@ def run(
         train_triplets, test_triplets = load_data(device=device, triplets_dir=triplets_dir)
 
     #number of unique items in the data matrix
-    n_items = torch.max(train_triplets).item() + 1
+    n_items = torch.max(train_triplets).item()
+    if torch.min(train_triplets).item() == 0:
+        n_items += 1
     #initialize an identity matrix of size n_items x n_items for one-hot-encoding of triplets
     I = torch.eye(n_items)
     #create train and validation mini-batches
