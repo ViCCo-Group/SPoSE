@@ -176,7 +176,7 @@ def load_data(device:torch.device, triplets_dir:str) -> Tuple[torch.Tensor, torc
         with open(os.path.join(triplets_dir, 'train_90.npy'), 'rb') as train_file:
             train_triplets = torch.from_numpy(np.load(train_file)).to(device).type(torch.LongTensor)
 
-        with open(os.path.join(test_triplets_dir, 'test_10.npy'), 'rb') as test_file:
+        with open(os.path.join(triplets_dir, 'test_10.npy'), 'rb') as test_file:
             test_triplets = torch.from_numpy(np.load(test_file)).to(device).type(torch.LongTensor)
     except FileNotFoundError:
         print('...Could not find any .npy files for current modality.')
