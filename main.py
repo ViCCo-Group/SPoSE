@@ -73,6 +73,10 @@ def parseargs():
         help='whether or not to plot the number of non-negative dimensions as a function of time after convergence')
     aa('--device', type=str, default='cpu',
         choices=['cpu', 'cuda', 'cuda:0', 'cuda:1'])
+    aa('--multi_proc', action='store_true',
+        help='whether to perform multi-process distributed GPU training')
+    aa('--local_rank', type=int, default=None,
+        help='specifies local rank of GPU in multi-process distributed training setting')
     aa('--rnd_seed', type=int, default=42,
         help='random seed for reproducibility')
     args = parser.parse_args()
@@ -154,21 +158,20 @@ def run(
         n_items += 1
     #initialize an identity matrix of size n_items x n_items for one-hot-encoding of triplets
     I = torch.eye(n_items)
-    #create train and validation mini-batches
-    train_batches = BatchGenerator(
-                                    I=I,
-                                    dataset=train_triplets,
-                                    batch_size=batch_size,
-                                    sampling_method=sampling_method,
-                                    p=p,
-                                    )
-    val_batches = BatchGenerator(
-                                 I=I,
-                                 dataset=test_triplets,
-                                 batch_size=batch_size,
-                                 sampling_method=None,
-                                 p=None,
-                                 )
+    #load train and test mini-batches
+    train_batches, val_batches = load_batches(
+                                              train_triplets=train_triplets,
+                                              test_triplets=test_triplets,
+                                              I=I,
+                                              multi_proc=multi_proc,
+                                              n_gpus=n_gpus,
+                                              batch_size=batch_size,
+                                              sampling_method=sampling_method,
+                                              rnd_seed=rnd_seed,
+                                              p=p,
+                                              )
+    print(f'Number of train batches in current process: {len(train_batches)}')
+    print()
 
     ###############################
     ########## settings ###########
@@ -179,8 +182,6 @@ def run(
 
     #deterministic version of SPoSE
     model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
-    #initialise optimizer
-    optim = Adam(model.parameters(), lr=lr)
 
     #move model to current device
     model.to(device)
@@ -203,6 +204,19 @@ def run(
 
     model_dir = os.path.join(results_dir, 'model')
 
+    ################################################
+    ############## Data Parallelism ################
+    ################################################
+
+    if (multi_proc and n_gpus > 1):
+        model = nn.parallel.DistributedDataParallel(
+                                                    model,
+                                                    device_ids=[local_rank],
+                                                    output_device=local_rank,
+                                                    )
+    #initialise optimizer
+    optim = Adam(model.parameters(), lr=lr)
+
     #####################################################################
     ######### Load model from previous checkpoint, if available #########
     #####################################################################
@@ -214,7 +228,10 @@ def run(
                 checkpoints = list(map(lambda m: get_digits(m), models))
                 last_checkpoint = np.argmax(checkpoints)
                 PATH = os.path.join(model_dir, models[last_checkpoint])
-                checkpoint = torch.load(PATH)
+                #TODO: figure out whether line below is really necessary to load model's checkpoints for single-node multi-proc distrib training
+                #torch.distributed.barrier()
+                map_location = {f'cuda:0': f'cuda:{local_rank}'} if (multi_proc and n_gpus > 1) else device
+                checkpoint = torch.load(PATH, map_location=map_location)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optim.load_state_dict(checkpoint['optim_state_dict'])
                 start = checkpoint['epoch'] + 1
@@ -266,7 +283,8 @@ def run(
             #probs = trinomial_probs(anchor, positive, negative, task)
             c_entropy = trinomial_loss(anchor, positive, negative, task)
             l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
-            pos_pen = torch.sum(F.relu(-model.fc.weight)) #positivity constraint to enforce non-negative values in our embedding matrix
+            W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
+            pos_pen = torch.sum(F.relu(-W)) #positivity constraint to enforce non-negative values in embedding matrix
             loss = c_entropy + 0.01 * pos_pen + (lmbda/n_items) * l1_pen
             loss.backward() #backpropagate loss into the network
             optim.step() #compute gradients and update weights accordingly
@@ -283,7 +301,15 @@ def run(
         ################ validation ####################
         ################################################
 
-        avg_val_loss, avg_val_acc = validation(model, val_batches, version, task, device, embed_dim)
+        avg_val_loss, avg_val_acc = validation(
+                                                model=model,
+                                                val_batches=val_batches,
+                                                version=version,
+                                                task=task,
+                                                device=device,
+                                                embed_dim=embed_dim,
+                                                batch_size=batch_size,
+                                                )
         val_losses.append(avg_val_loss)
         val_accs.append(avg_val_acc)
 
@@ -301,7 +327,7 @@ def run(
 
         if (epoch + 1) % 5 == 0:
             if version == 'deterministic':
-                W = model.fc.weight
+                W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
                 np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
                 logger.info(f'Saving model weights at epoch {epoch+1}')
 
@@ -317,17 +343,31 @@ def run(
 
             #save model and optim parameters for inference or to resume training
             #PyTorch convention is to save checkpoints as .tar files
-            torch.save({
-                        'epoch': epoch,
-                        'model_state_dict': model.state_dict(),
-                        'optim_state_dict': optim.state_dict(),
-                        'loss': loss,
-                        'train_losses': train_losses,
-                        'train_accs': train_accs,
-                        'val_losses': val_losses,
-                        'val_accs': val_accs,
-                        'nneg_d_over_time': nneg_d_over_time,
-                        }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
+            if (multi_proc and n_gpus > 1):
+                if local_rank == 0:
+                    torch.save({
+                                'epoch': epoch,
+                                'model_state_dict': model.state_dict(),
+                                'optim_state_dict': optim.state_dict(),
+                                'loss': loss,
+                                'train_losses': train_losses,
+                                'train_accs': train_accs,
+                                'val_losses': val_losses,
+                                'val_accs': val_accs,
+                                'nneg_d_over_time': nneg_d_over_time,
+                                }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
+            else:
+                torch.save({
+                            'epoch': epoch,
+                            'model_state_dict': model.state_dict(),
+                            'optim_state_dict': optim.state_dict(),
+                            'loss': loss,
+                            'train_losses': train_losses,
+                            'train_accs': train_accs,
+                            'val_losses': val_losses,
+                            'val_accs': val_accs,
+                            'nneg_d_over_time': nneg_d_over_time,
+                            }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
 
             logger.info(f'Saving model parameters at epoch {epoch+1}')
 
@@ -358,26 +398,39 @@ def run(
         json.dump(results, results_file)
 
 if __name__ == "__main__":
-    #parse all arguments and set random seeds
+    #parse all arguments
     args = parseargs()
-
+    #set random seeds
     np.random.seed(args.rnd_seed)
     random.seed(args.rnd_seed)
     torch.manual_seed(args.rnd_seed)
 
-    #set device
-    device = torch.device(args.device)
-
-    #some variables to debug / potentially resolve CUDA problems
-    if device == torch.device('cuda:0'):
+    n_gpus = torch.cuda.device_count()
+    multi_proc = args.multi_proc
+    if (multi_proc and n_gpus > 1):
+        local_rank = args.local_rank
+        print(f'Local GPU rank: {local_rank}')
+        print()
+        device = torch.device(f'cuda:{local_rank}')
+        torch.cuda.set_device(local_rank)
         torch.cuda.manual_seed_all(args.rnd_seed)
-        torch.backends.cudnn.benchmark = False
-        torch.cuda.set_device(0)
-
-    elif device == torch.device('cuda:1') or device == torch.device('cuda'):
-        torch.cuda.manual_seed_all(args.rnd_seed)
-        torch.backends.cudnn.benchmark = False
-        torch.cuda.set_device(1)
+        torch.distributed.init_process_group(backend='nccl', init_method='env://')
+        #TODO: figure out whether line below is necessary for single-node multi-proc distributed training
+        #torch.distributed.barrier()
+        print(f'...Using {n_gpus} GPUs for multi-process distributed training.')
+        print()
+    else:
+        #set device
+        device = torch.device(args.device)
+        #some variables to debug / potentially resolve CUDA problems
+        if device == torch.device('cuda:0'):
+            torch.cuda.manual_seed_all(args.rnd_seed)
+            torch.backends.cudnn.benchmark = False
+            torch.cuda.set_device(0)
+        elif device in [torch.device('cuda'), torch.device('cuda:1')]:
+            torch.cuda.manual_seed_all(args.rnd_seed)
+            torch.backends.cudnn.benchmark = False
+            torch.cuda.set_device(1)
 
     print(f'PyTorch CUDA version: {torch.version.cuda}')
     print()
@@ -387,8 +440,14 @@ if __name__ == "__main__":
             #NOTE: if you have an embedding matrix (i.e., an embedding per object), you can automatically tripletize the data (simply change .csv file)
             embed_path = os.path.join(args.modality, 'sensevec.csv')
         elif re.search(r'visual', args.modality):
-            #NOTE: if you have a matrix of hidden unit activations per object, you can automatically tripletize the data (simply change .txt file)
-            embed_path = os.path.join(args.modality, 'activations.txt')
+            #NOTE: if you have a matrix of hidden unit activations per object, you can automatically tripletize the data (simply change .txt/.npy file)
+            try:
+                embed_path = os.path.join(args.modality, 'activations.npy')
+            except FileNotFoundError:
+                print(f'...Could not find .npy files.')
+                print(f'...Now searching for .txt files.')
+                print()
+                embed_path = os.path.join(args.modality, 'activations.txt')
     else:
         embed_path = None
 

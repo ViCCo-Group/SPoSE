@@ -29,6 +29,19 @@ import torch.nn.functional as F
 
 from typing import Tuple
 
+class TripletDataset(Dataset):
+
+    def __init__(self, I:torch.tensor, dataset:torch.Tensor):
+        self.I = I
+        self.dataset = dataset
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, idx:int) -> torch.Tensor:
+        sample = encode_as_onehot(self.I, self.dataset[idx])
+        return sample
+
 class BatchGenerator(object):
 
     def __init__(
@@ -83,6 +96,15 @@ def assert_nneg(X:np.ndarray, thresh:float=1e-5) -> np.ndarray:
         X -= np.amin(X, axis=0)
         return X + thresh
     return X
+
+def load_features(PATH:str) -> np.ndarray:
+    if re.search(r'text', PATH):
+        E = np.loadtxt(PATH, delimiter=',')
+        E = remove_nans(E) #remove all objects that contain NaN values
+    else:
+        with open(PATH, 'rb') as f:
+            E = np.load(f)
+    return E
 
 def tripletize_data(
                     PATH:str,
@@ -188,6 +210,33 @@ def load_data(device:torch.device, triplets_dir:str) -> Tuple[torch.Tensor, torc
         test_triplets = torch.from_numpy(np.loadtxt(os.path.join(triplets_dir, 'test_10.txt'))).to(device).type(torch.LongTensor)
     return train_triplets, test_triplets
 
+def load_batches(
+                 train_triplets:torch.Tensor,
+                 test_triplets:torch.Tensor,
+                 I:torch.Tensor,
+                 multi_proc:bool,
+                 n_gpus:int,
+                 batch_size:int,
+                 sampling_method:str,
+                 rnd_seed:int,
+                 p=None,
+                 ):
+    if (multi_proc and n_gpus > 1):
+        if sampling_method == 'soft':
+            warnings.warn(f'...Soft sampling cannot be used in a multi-process distributed training setting.', RuntimeWarning)
+            warnings.warn(f'...Processes will equally distribute the entire training dataset amongst each other.', RuntimeWarning)
+            warnings.warn(f'...If you want to use soft sampling, you must switch to single GPU or CPU training.', UserWarning)
+        train_set = TripletDataset(I=I, dataset=train_triplets)
+        val_set = TripletDataset(I=I, dataset=test_triplets)
+        train_sampler = DistributedSampler(dataset=train_set, shuffle=True, seed=rnd_seed)
+        train_batches = DataLoader(dataset=train_set, batch_size=batch_size, sampler=train_sampler, num_workers=n_gpus)
+        val_batches = DataLoader(dataset=val_set, batch_size=batch_size, shuffle=False, num_workers=n_gpus)
+    else:
+        #create train and validation mini-batches
+        train_batches = BatchGenerator(I=I, dataset=train_triplets, batch_size=batch_size, sampling_method=sampling_method, p=p)
+        val_batches = BatchGenerator(I=I, dataset=test_triplets, batch_size=batch_size, sampling_method=None, p=None)
+    return train_batches, val_batches
+
 def encode_as_onehot(I:torch.Tensor, triplets:torch.Tensor) -> torch.Tensor:
     """encode item triplets as one-hot-vectors"""
     return I[triplets.flatten(), :]
@@ -239,6 +288,7 @@ def validation(
                 embed_dim:int,
                 sampling:bool=False,
                 batch_size=None,
+                n_samples=None,
                 ):
     if sampling:
         assert isinstance(batch_size, int), 'batch size must be defined'
@@ -252,23 +302,42 @@ def validation(
             batch = batch.to(device)
 
             if version == 'variational':
-                logits, _, _, _ = model(batch, device)
+                assert isinstance(n_samples, int), 'ouputs of variational neural networks have to be averaged over different samples'
+                k = 3 if task == 'odd_one_out' else 2
+                sampled_probas = torch.zeros(n_samples, batch.shape[0] // k, k).to(device)
+                sampled_choices = torch.zeros(n_samples, batch.shape[0] // k).to(device)
+
+                for k in range(n_samples):
+                    logits, _, _, _ = model(batch, device)
+                    anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
+                    similarities = compute_similarities(anchor, positive, negative, task)
+                    soft_choices = softmax(similarities)
+                    probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
+                    sampled_probas[k] += probas
+                    sampled_choices[k] +=  soft_choices
+
+                probas = sampled_probas.mean(dim=0)
+                preds = torch.argmax(probas, dim=1)
+                val_acc = len(preds[preds == 0]) / len(preds)
+                soft_choices = sampled_choices.mean(dim=0)
+                val_loss = torch.mean(-torch.log(soft_choices))
             else:
                 logits = model(batch)
+                anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
 
-            anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[1])), dim=1)
+                if sampling:
+                    similarities = compute_similarities(anchor, positive, negative, task)
+                    probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).numpy()
+                    probas = probas[:, ::-1]
+                    human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
+                    model_choices = np.array([np.random.choice(h_choice, size=len(p), replace=False, p=p)[::-1] for h_choice, p in zip(human_choices, probas)])
+                    sampled_choices[j*batch_size:(j+1)*batch_size] += model_choices
+                else:
+                    val_loss = trinomial_loss(anchor, positive, negative, task)
+                    val_acc = choice_accuracy(anchor, positive, negative, task)
 
-            if sampling:
-                similarities = compute_similarities(anchor, positive, negative, task)
-                probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).numpy()
-                probas = probas[:, ::-1]
-                human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
-                model_choices = np.array([np.random.choice(h_choice, size=len(p), replace=False, p=p)[::-1] for h_choice, p in zip(human_choices, probas)])
-                sampled_choices[j*batch_size:(j+1)*batch_size] += model_choices
-            else:
-                val_loss = trinomial_loss(anchor, positive, negative, task)
-                batch_losses_val[j] += val_loss.item()
-                batch_accs_val[j] += choice_accuracy(anchor, positive, negative, task)
+            batch_losses_val[j] += val_loss.item()
+            batch_accs_val[j] += val_acc
 
     if sampling:
         return sampled_choices
