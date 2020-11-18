@@ -29,6 +29,7 @@
  --multi_proc (whether to perform single or multi node multi-process distributed training; only possible on GPU)
  --rnd_seed (random seed)
 ```
+
 Here is an example call for single-process training:
 
 ```
