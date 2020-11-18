@@ -26,6 +26,7 @@
  --p (fraction of train set to sample)
  --plot_dims (whether or not to plot the number of non-negative dimensions as a function of time)
  --device (CPU or CUDA)
+ --multi_proc (whether to perform single or multi node multi-process distributed training; only possible on GPU)
  --rnd_seed (random seed)
 ```
 Here is an example call for single-process training:
@@ -40,7 +41,7 @@ Here is an example call for single-node multi-process GPU training:
 python -m torch.distributed.launch --nproc_per_node=NUM_GPUS_YOU_HAVE_ON_NODE main.py --task odd_one_out --modality behavioral/ --triplets_dir ./triplets/behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 90 --batch_size 128 --epochs 500 --window_size 30 --plot_dims --device cuda --multi_proc --rnd_seed 42
 ```
 
-For multi-node multi-process GPU training have a look [here](https://pytorch.org/docs/stable/distributed.html) 
+For multi-node multi-process GPU training have a look [here](https://pytorch.org/docs/stable/distributed.html).
 
 
 #### NOTES:
