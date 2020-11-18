@@ -3,12 +3,14 @@
 
 __all__ = [
             'BatchGenerator',
+            'TripletDataset',
             'choice_accuracy',
             'cross_entropy_loss',
             'encode_as_onehot',
             'get_digits',
             'get_nneg_dims',
             'get_results_files',
+            'load_batches',
             'load_data',
             'load_model',
             'merge_dicts',
@@ -17,7 +19,7 @@ __all__ = [
             'trinomial_probs',
             'tripletize_data',
             'validation',
-        ]
+            ]
 
 import json
 import logging
