@@ -9,6 +9,7 @@ import os
 import random
 import re
 import torch
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,7 +19,6 @@ import torch.nn.functional as F
 from collections import defaultdict
 from scipy.stats import linregress
 from torch.optim import Adam, AdamW
-from tqdm import trange
 
 from plotting import *
 from utils import *
