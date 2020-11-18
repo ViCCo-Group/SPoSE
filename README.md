@@ -44,7 +44,6 @@ python -m torch.distributed.launch --nproc_per_node=NUM_GPUS_YOU_HAVE_ON_NODE ma
 
 For multi-node multi-process GPU training have a look [here](https://pytorch.org/docs/stable/distributed.html).
 
-
 #### NOTES:
 
 1. Note that the triplets are expected to be in the format `N x 3`, where N = number of trials (e.g., 100k) and 3 refers to the triplets, where `col_0` = anchor_1, `col_1` = anchor_2, `col_2` = odd one out. Triplet data must be split into train and test splits, and named `train_90.txt` and `test_10.txt` respectively. In case you would like to use some sort of text embeddings (e.g., sensvecs), simply put your `.csv` files into a folder that refers to the current modality (e.g., `./text/`), and the script will automatically tripletize the word embeddings for you and move the triplet data into `./triplets/text/`.
