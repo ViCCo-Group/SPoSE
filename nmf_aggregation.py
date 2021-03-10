@@ -17,8 +17,11 @@ import scipy.io
 from collections import defaultdict
 from typing import Tuple, List
 from sklearn.metrics import r2_score
+from sklearn.decomposition import NMF
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import KFold, RepeatedKFold
+
+from plotting import plot_nmf_correlations, plot_r2_scores
 
 def parseargs():
     parser = argparse.ArgumentParser()
