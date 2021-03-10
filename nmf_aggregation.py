@@ -33,6 +33,8 @@ def parseargs():
     aa('--out_format', type=str,
         choices=['mat', 'txt', 'npy'],
         help='format in which to store nmf weights matrix to disk')
+    aa('--save_all_components', action='store_true',
+        help='whether to store all NMF weight matrices (i.e., corresponding to each number of latent components)')
     aa('--compare_nmfs', action='store_true',
         help='compare different NMF weight matrices against each other to test their reproducibility')
     aa('--rnd_seed', type=int, default=42,
@@ -52,14 +54,24 @@ def aggregate_val_accs(in_path:str) -> np.ndarray:
 def get_weights(in_path:str) -> list:
     return [np.load(os.path.join(in_path, m.name, 'weight_sorted.npy')) for m in os.scandir(in_path) if m.is_dir() and m.name[-2:].isdigit()]
 
-def save_nmf_components(W_nmf:np.ndarray, out_path:str, file_format:str) -> None:
+def save_all_components_(out_path:str, W_nmfs:List[np.ndarray], n_components:List[float], file_format:str) -> None:
+    for d, W_nmf in zip(n_components, W_nmfs):
+        if file_format == 'txt':
+            np.savetxt(os.path.join(out_path, f'nmf_components_{d}.txt'), W_nmf.T)
+        elif file_format == 'npy':
+            with open(os.path.join(out_path, f'nmf_components_{d}.npy'), 'wb') as f:
+                np.save(f, W_nmf.T)
+        else:
+            scipy.io.savemat(os.path.join(PATH, f'nmf_components_{d}.mat'), {'components': W_nmf.T})
+
+def save_argmax_components_(out_path:str, W_nmf:np.ndarray, file_format:str) -> None:
     if file_format == 'txt':
         np.savetxt(os.path.join(out_path, 'nmf_components.txt'), W_nmf)
-    elif file_format == '.npy':
+    elif file_format == 'npy':
         with open(os.path.join(out_path, 'nmf_components.npy'), 'wb') as f:
             np.save(f, W_nmf)
     else:
-        scipy.io.savemat(os.path.join(PATH, 'nmf_components.mat'), {'components': nmf_components})
+        scipy.io.savemat(os.path.join(PATH, 'nmf_components.mat'), {'components': W_nmf})
 
 def remove_zeros(W:np.ndarray, eps:float=.1) -> np.ndarray:
     w_max = np.max(W, axis=1)
@@ -104,10 +116,8 @@ def nmf_grid_search(
             r2_scores[k] = r2_score(y_test, y_pred)
         avg_r2_scores[j] = np.mean(r2_scores)
         W_nmfs.append(remove_zeros(sort_dims_(W_nmf.T)))
-    if comparison:
-        return W_nmfs
-    W_nmf_final = W_nmfs[np.argmax(avg_r2_scores)]
-    return W_nmf_final.T, avg_r2_scores
+    W_nmf_argmax = W_nmfs[np.argmax(avg_r2_scores)]
+    return W_nmf_argmax.T, W_nmfs, avg_r2_scores
 
 def aggregate_weights(
                       in_path:str,
@@ -115,25 +125,30 @@ def aggregate_weights(
                       n_components:list,
                       out_format:str,
                       compare_nmfs:bool=False,
+                      save_all_components:bool=False,
                       ) -> None:
     mean_val_acc = aggregate_val_accs(in_path)
     Ws = get_weights(in_path)
-    W_nmf_final, mean_r2_scores = nmf_grid_search(Ws, n_components=n_components)
+    W_nmf_argmax, W_nmfs, mean_r2_scores = nmf_grid_search(Ws, n_components=n_components)
 
     #make sure that output directory exists
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
     if compare_nmfs:
-        W_nmfs_i = nmf_grid_search(Ws[:len(Ws)//2], n_components=n_components, comparison=True)
-        W_nmfs_j = nmf_grid_search(Ws[len(Ws)//2:], n_components=n_components, comparison=True)
+        _, W_nmfs_i, _ = nmf_grid_search(Ws[:len(Ws)//2], n_components=n_components, comparison=True)
+        _, W_nmfs_j, _ = nmf_grid_search(Ws[len(Ws)//2:], n_components=n_components, comparison=True)
         correlations, rhos = correlate_nmf_components_(W_nmfs_i, W_nmfs_j)
         plot_nmf_correlations(out_path=out_path, correlations=correlations, thresholds=rhos, n_components=n_components)
 
     with open(os.path.join(out_path, 'aggregated_results.json'), 'w') as f:
         json.dump({'mean_val_acc': mean_val_acc}, results_file)
 
-    save_nmf_components_(W_nmf_final, out_path, out_format)
+    if save_all_components:
+        save_all_components_(out_path=out_path, W_nmfs=W_nmfs, n_components=n_components, file_format=out_format)
+    else:
+        save_argmax_components_(out_path=out_path, W_nmf=W_nmf_argmax, file_format=out_format)
+    #plot r2 scores as a function of the number of latent components in the grid
     plot_r2_scores(out_path=out_path, r2_scores=mean_r2_scores, n_components=n_components)
 
 if __name__ == '__main__':
@@ -148,4 +163,5 @@ if __name__ == '__main__':
                      n_components=args.n_components,
                      out_format=args.out_format,
                      compare_nmfs=args.compare_nmfs,
+                     save_all_components=args.save_all_components,
     )
