@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-#import IPython; IPython.embed()
 import argparse
 import json
 import logging
@@ -41,9 +40,9 @@ def parseargs():
     aa('--triplets_dir', type=str,
         help='directory from where to load triplets')
     aa('--results_dir', type=str, default='./results/',
-        help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/rnd_seed/)')
+        help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/rnd_seed/model_ID)')
     aa('--plots_dir', type=str, default='./plots/',
-        help='optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/rnd_seed/)')
+        help='optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/rnd_seed/model_ID)')
     aa('--learning_rate', type=float, default=0.001,
         help='learning rate to be used in optimizer')
     aa('--lmbda', type=float,
@@ -115,7 +114,6 @@ def run(
         plot_dims:bool=True,
         show_progress:bool=True,
 ) -> None:
-
     if device == torch.device('cuda'):
         device = torch.device(f'cuda:{process_id}')
         torch.cuda.set_device(process_id)
@@ -159,11 +157,15 @@ def run(
     print(f'...Creating PATHs\n')
     if results_dir == './results/':
         results_dir = os.path.join(results_dir, modality, version, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed:02d}', f'model_{process_id:02d}')
+    else:
+        results_dir = os.path.join(results_dir, f'model_{process_id:02d}')
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
     if plots_dir == './plots/':
         plots_dir = os.path.join(plots_dir, modality, version, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed}', f'model_{process_id:02d}')
+    else:
+        plots_dir = os.path.join(plots_dir, f'model_{process_id:02d}')
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
@@ -345,9 +347,9 @@ def run(
     with open(PATH, 'w') as results_file:
         json.dump(results, results_file)
 
-if __name__ == "__main__":
-    #start parallelization
-    torch.multiprocessing.set_start_method('spawn')
+if __name__ == '__main__':
+    #start parallelization (note that force must be set to true since there are other files in this project with __name__ == __main__)
+    torch.multiprocessing.set_start_method('spawn', force=True)
     #parse arguments and set random seeds
     args = parseargs()
     np.random.seed(args.rnd_seed)
@@ -366,7 +368,7 @@ if __name__ == "__main__":
     else:
         n_procs = args.n_models
 
-    mp = torch.multiprocessing.spawn(
+    torch.multiprocessing.spawn(
         run,
         args=(
         args.version,
