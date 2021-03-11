@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-#import IPython; IPython.embed()
 import argparse
 import json
 import logging
@@ -16,6 +15,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
+from os.path import join as pjoin
 from collections import defaultdict
 from scipy.stats import linregress
 from torch.optim import Adam, AdamW
@@ -39,21 +39,18 @@ def parseargs():
     aa('--modality', type=str, default='behavioral/',
         choices=['behavioral/', 'text/', 'visual/', 'neural/'],
         help='define for which modality SPoSE should be perform specified task')
-    aa('--triplets_dir', type=str, default=None,
-        help='in case you have tripletized data, provide directory from where to load triplets')
+    aa('--triplets_dir', type=str,
+        help='directory from where to load triplets')
     aa('--results_dir', type=str, default='./results/',
         help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/rnd_seed/)')
     aa('--plots_dir', type=str, default='./plots/',
         help='optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/rnd_seed/)')
-    aa('--tripletize', type=str, default=None,
-        choices=[None, 'deterministic', 'probabilistic'],
-        help='whether to deterministically (argmax) or probabilistically (conditioned on PMF) sample odd-one-out choices')
     aa('--beta', type=float, default=None,
         help='determines softmax temperature in probabilistic tripletizing approach')
     aa('--learning_rate', type=float, default=0.001,
         help='learning rate to be used in optimizer')
     aa('--lmbda', type=float,
-        help='lambda value determines l1-norm fraction to regularize loss')
+        help='lambda value determines weight of l1-regularization')
     aa('--embed_dim', metavar='D', type=int, default=90,
         help='dimensionality of the embedding matrix')
     aa('--batch_size', metavar='B', type=int, default=100,
@@ -61,7 +58,7 @@ def parseargs():
         help='number of triplets in each mini-batch')
     aa('--epochs', metavar='T', type=int, default=500,
         help='maximum number of epochs to optimize SPoSE model for')
-    aa('--window_size', type=int, default=30,
+    aa('--window_size', type=int, default=50,
         help='window size to be used for checking convergence criterion with linear regression')
     aa('--sampling_method', type=str, default='normal',
         choices=['normal', 'soft'],
@@ -119,8 +116,6 @@ def run(
         lmbda:float,
         lr:float,
         p=None,
-        embed_path=None,
-        tripletize=None,
         beta=None,
         plot_dims:bool=True,
         show_progress:bool=True,
@@ -128,50 +123,22 @@ def run(
     #initialise logger and start logging events
     logger = setup_logging(file='spose_model_optimization.log')
     logger.setLevel(logging.INFO)
-
-    #in case no triplets exist, tripletize data
-    if isinstance(triplets_dir, type(None)):
-        assert isinstance(embed_path, str), 'PATH from where to load neural activations or word embeddings must be defined'
-        logger.info(f'Started tripletizing data with {tripletize} sampling of odd-one-out choices')
-        if re.search(r'visual', modality):
-            n_samples = 1.0e+8
-            sampling_constant = 1.0e+7
-        elif re.search(r'text', modality):
-            n_samples = 1.5e+6
-            sampling_constant = 1.5e+5
-        train_triplets, test_triplets = tripletize_data(
-                                                        PATH=embed_path,
-                                                        method=tripletize,
-                                                        n_samples=n_samples,
-                                                        sampling_constant=sampling_constant,
-                                                        beta=beta,
-                                                        folder=modality,
-                                                        device=device,
-                                                        )
-        logger.info('Finished tripletizing data')
-    else:
-        train_triplets, test_triplets = load_data(device=device, triplets_dir=triplets_dir)
-
-    #number of unique items in the data matrix
-    n_items = torch.max(train_triplets).item()
-    if torch.min(train_triplets).item() == 0:
-        n_items += 1
-    #initialize an identity matrix of size n_items x n_items for one-hot-encoding of triplets
-    I = torch.eye(n_items)
+    #load triplets into memory
+    train_triplets, test_triplets = load_data(device=device, triplets_dir=triplets_dir)
+    n_items = get_nitems(train_triplets)
     #load train and test mini-batches
     train_batches, val_batches = load_batches(
                                               train_triplets=train_triplets,
                                               test_triplets=test_triplets,
-                                              I=I,
-                                              multi_proc=multi_proc,
-                                              n_gpus=n_gpus,
+                                              n_items=n_items,
                                               batch_size=batch_size,
                                               sampling_method=sampling_method,
+                                              multi_proc=multi_proc,
+                                              n_gpus=n_gpus,
                                               rnd_seed=rnd_seed,
                                               p=p,
                                               )
-    print(f'Number of train batches in current process: {len(train_batches)}')
-    print()
+    print(f'\nNumber of train batches in current process: {len(train_batches)}\n')
 
     ###############################
     ########## settings ###########
@@ -179,10 +146,10 @@ def run(
 
     #cutoff for significance (checking if slope is significantly decreasing)
     pval_thres = .1
-
+    #softmax temperature
+    temperature = torch.tensor(1.).to(device)
     #deterministic version of SPoSE
     model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
-
     #move model to current device
     model.to(device)
 
@@ -225,7 +192,7 @@ def run(
         models = [m for m in os.listdir(model_dir) if m.endswith('.tar')]
         if len(models) > 0:
             try:
-                checkpoints = list(map(lambda m: get_digits(m), models))
+                checkpoints = list(map(get_digits, models))
                 last_checkpoint = np.argmax(checkpoints)
                 PATH = os.path.join(model_dir, models[last_checkpoint])
                 #TODO: figure out whether line below is really necessary to load model's checkpoints for single-node multi-proc distrib training
@@ -241,11 +208,9 @@ def run(
                 train_losses = checkpoint['train_losses']
                 val_losses = checkpoint['val_losses']
                 nneg_d_over_time = checkpoint['nneg_d_over_time']
-                print(f'...Loaded model and optimizer state dicts from previous run. Starting at epoch {start}.')
-                print()
+                print(f'...Loaded model and optimizer state dicts from previous run. Starting at epoch {start}.\n')
             except RuntimeError:
-                print(f'...Loading model and optimizer state dicts failed. Check whether you are currently using a different set of model parameters.')
-                print()
+                print(f'...Loading model and optimizer state dicts failed. Check whether you are currently using a different set of model parameters.\n')
                 start = 0
                 train_accs, val_accs = [], []
                 train_losses, val_losses = [], []
@@ -267,11 +232,13 @@ def run(
     ################################################
 
     iter = 0
-    results = defaultdict(dict)
-    logger.info(f'Optimization started for lambda: {lmbda}')
+    results = {}
+    logger.info(f'Optimization started for lambda: {lmbda}\n')
 
     for epoch in range(start, epochs):
         model.train()
+        batch_llikelihoods = torch.zeros(len(train_batches))
+        batch_closses = torch.zeros(len(train_batches))
         batch_losses_train = torch.zeros(len(train_batches))
         batch_accs_train = torch.zeros(len(train_batches))
         for i, batch in enumerate(train_batches):
@@ -281,19 +248,27 @@ def run(
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
             #TODO: figure out why the line below is necessary if we don't use the variable probs anywhere else in the script
             #probs = trinomial_probs(anchor, positive, negative, task)
-            c_entropy = trinomial_loss(anchor, positive, negative, task)
+            c_entropy = trinomial_loss(anchor, positive, negative, task, temperature)
             l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
             W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
             pos_pen = torch.sum(F.relu(-W)) #positivity constraint to enforce non-negative values in embedding matrix
-            loss = c_entropy + 0.01 * pos_pen + (lmbda/n_items) * l1_pen
-            loss.backward() #backpropagate loss into the network
-            optim.step() #compute gradients and update weights accordingly
+            complexity_loss = (lmbda/n_items) * l1_pen
+            loss = c_entropy + 0.01 * pos_pen + complexity_loss
+            loss.backward()
+            optim.step()
             batch_losses_train[i] += loss.item()
+            batch_llikelihoods[i] += c_entropy.item()
+            batch_closses[i] += complexity_loss.item()
             batch_accs_train[i] += choice_accuracy(anchor, positive, negative, task)
             iter += 1
 
+        avg_llikelihood = torch.mean(batch_llikelihoods).item()
+        avg_closs = torch.mean(batch_closses).item()
         avg_train_loss = torch.mean(batch_losses_train).item()
         avg_train_acc = torch.mean(batch_accs_train).item()
+
+        loglikelihoods.append(avg_llikelihood)
+        complexity_losses.append(avg_closs)
         train_losses.append(avg_train_loss)
         train_accs.append(avg_train_acc)
 
@@ -307,23 +282,22 @@ def run(
                                                 version=version,
                                                 task=task,
                                                 device=device,
-                                                embed_dim=embed_dim,
                                                 batch_size=batch_size,
                                                 )
         val_losses.append(avg_val_loss)
         val_accs.append(avg_val_acc)
 
-        logger.info('Epoch: {0}/{1}'.format(epoch + 1, epochs))
-        logger.info('Train acc: {:.3f}'.format(avg_train_acc))
-        logger.info('Train loss: {:.3f}'.format(avg_train_loss))
-        logger.info('Val acc: {:.3f}'.format(avg_val_acc))
-        logger.info('Val loss: {:.3f}'.format(avg_val_loss))
+        logger.info(f'Process: {process_id}')
+        logger.info(f'Epoch: {epoch+1}/{epochs}')
+        logger.info(f'Train acc: {avg_train_acc:.3f}')
+        logger.info(f'Train loss: {avg_train_loss:.3f}')
+        logger.info(f'Val acc: {avg_val_acc:.3f}')
+        logger.info(f'Val loss: {avg_val_loss:.3f}\n')
 
         if show_progress:
-            print("========================================================================================================")
+            print("\n========================================================================================================")
             print(f'====== Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
-            print("========================================================================================================")
-            print()
+            print("========================================================================================================\n")
 
         if (epoch + 1) % 5 == 0:
             if version == 'deterministic':
@@ -335,11 +309,9 @@ def run(
 
                 if plot_dims:
                     nneg_d_over_time.append((epoch+1, current_d))
-
-                print("========================================================================================================")
+                print("\n========================================================================================================")
                 print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
-                print("========================================================================================================")
-                print()
+                print("========================================================================================================\n")
 
             #save model and optim parameters for inference or to resume training
             #PyTorch convention is to save checkpoints as .tar files
@@ -377,30 +349,29 @@ def run(
                 if (lmres.slope > 0) or (lmres.pvalue > pval_thres):
                     break
 
-    results[f'seed_{rnd_seed}'] = {
-                                  'epoch': int(np.argmax(val_accs)+1),
-                                  'train_acc': float(train_accs[np.argmax(val_accs)]),
-                                  'val_acc': float(np.max(val_accs)),
-                                  'val_loss': float(np.min(val_losses)),
-                                  }
-    logger.info(f'Optimization finished after {epoch+1} epochs for lambda: {lmbda}')
+    #save final model weights
+    save_weights_(version, results_dir, model.fc.weight)
+    results = {'epoch': len(train_accs), 'train_acc': train_accs[-1], 'val_acc': val_accs[-1], 'val_loss': val_losses[-1]}
+    logger.info(f'\nOptimization finished after {epoch+1} epochs for lambda: {lmbda}\n')
 
-    if plot_dims:
-        if version == 'deterministic':
-            logger.info(f'Plotting number of non-negative dimensions as a function of time for lambda: {lmbda}')
-            plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
+    if (version == 'deterministic' and plot_dims):
+        logger.info(f'\nPlotting number of non-negative dimensions as a function of time for process: {process_id}\n')
+        plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
 
-    logger.info('Plotting model performances over time across all lambda values')
-    plot_single_performance(plots_dir=plots_dir, val_accs=val_accs, train_accs=train_accs, lmbda=lmbda)
+    logger.info(f'\nPlotting model performances over time for lambda: {lmbda}')
+    #plot train and validation performance alongside each other to examine a potential overfit to the training data
+    plot_single_performance(plots_dir=plots_dir, val_accs=val_accs, train_accs=train_accs)
+    logger.info(f'\nPlotting losses over time for lambda: {lmbda}')
+    #plot both log-likelihood of the data (i.e., cross-entropy loss) and complexity loss (i.e., l1-norm in DSPoSE and KLD in VSPoSE)
+    plot_complexities_and_loglikelihoods(plots_dir=plots_dir, loglikelihoods=loglikelihoods, complexity_losses=complexity_losses)
 
     PATH = os.path.join(results_dir, 'results.json')
     with open(PATH, 'w') as results_file:
         json.dump(results, results_file)
 
 if __name__ == "__main__":
-    #parse all arguments
+    #parse all arguments and set random seeds
     args = parseargs()
-    #set random seeds
     np.random.seed(args.rnd_seed)
     random.seed(args.rnd_seed)
     torch.manual_seed(args.rnd_seed)
@@ -408,48 +379,28 @@ if __name__ == "__main__":
     n_gpus = torch.cuda.device_count()
     multi_proc = args.multi_proc
     if (multi_proc and n_gpus > 1):
+        global local_rank
         local_rank = args.local_rank
-        print(f'Local GPU rank: {local_rank}')
-        print()
         device = torch.device(f'cuda:{local_rank}')
         torch.cuda.set_device(local_rank)
         torch.cuda.manual_seed_all(args.rnd_seed)
         torch.distributed.init_process_group(backend='nccl', init_method='env://')
         #TODO: figure out whether line below is necessary for single-node multi-proc distributed training
         #torch.distributed.barrier()
-        print(f'...Using {n_gpus} GPUs for multi-process distributed training.')
-        print()
-    else:
-        #set device
+        print(f'\nUsing {n_gpus} GPUs for multi-process distributed training.')
+        print(f'Local GPU rank in current process: {local_rank}')
+        print(f'PyTorch CUDA version: {torch.version.cuda}\n')
+    elif n_gpus == 1:
         device = torch.device(args.device)
-        #some variables to debug / potentially resolve CUDA problems
-        if device == torch.device('cuda:0'):
-            torch.cuda.manual_seed_all(args.rnd_seed)
-            torch.backends.cudnn.benchmark = False
-            torch.cuda.set_device(0)
-        elif device in [torch.device('cuda'), torch.device('cuda:1')]:
-            torch.cuda.manual_seed_all(args.rnd_seed)
-            torch.backends.cudnn.benchmark = False
+        torch.cuda.manual_seed_all(args.rnd_seed)
+        torch.backends.cudnn.benchmark = False
+        try:
+            torch.cuda.set_device(int(args.device[-1]))
+        except:
             torch.cuda.set_device(1)
-
-    print(f'PyTorch CUDA version: {torch.version.cuda}')
-    print()
-
-    if isinstance(args.tripletize, str):
-        if re.search(r'text', args.modality):
-            #NOTE: if you have an embedding matrix (i.e., an embedding per object), you can automatically tripletize the data (simply change .csv file)
-            embed_path = os.path.join(args.modality, 'sensevec.csv')
-        elif re.search(r'visual', args.modality):
-            #NOTE: if you have a matrix of hidden unit activations per object, you can automatically tripletize the data (simply change .txt/.npy file)
-            try:
-                embed_path = os.path.join(args.modality, 'activations.npy')
-            except FileNotFoundError:
-                print(f'...Could not find .npy files.')
-                print(f'...Now searching for .txt files.')
-                print()
-                embed_path = os.path.join(args.modality, 'activations.txt')
+        print(f'\nPyTorch CUDA version: {torch.version.cuda}\n')
     else:
-        embed_path = None
+        device = torch.device(args.device)
 
     run(
         version=args.version,
@@ -468,8 +419,6 @@ if __name__ == "__main__":
         lmbda=args.lmbda,
         lr=args.learning_rate,
         p=args.p,
-        embed_path=embed_path,
-        tripletize=args.tripletize,
         beta=args.beta,
         plot_dims=args.plot_dims,
         )
