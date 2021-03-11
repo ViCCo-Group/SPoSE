@@ -132,15 +132,15 @@ def aggregate_weights(
                       ) -> None:
     mean_val_acc = aggregate_val_accs(in_path)
     Ws = get_weights(in_path)
-    W_nmf_argmax, W_nmfs, mean_r2_scores = nmf_grid_search(Ws, n_components=n_components)
+    W_nmf_argmax, W_nmfs, mean_r2_scores = nmf_grid_search(np.copy(Ws), n_components=n_components)
 
     #make sure that output directory exists
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
     if compare_nmfs:
-        _, W_nmfs_i, _ = nmf_grid_search(Ws[:len(Ws)//2], n_components=n_components, comparison=True)
-        _, W_nmfs_j, _ = nmf_grid_search(Ws[len(Ws)//2:], n_components=n_components, comparison=True)
+        _, W_nmfs_i, _ = nmf_grid_search(np.copy(Ws)[:len(Ws)//2], n_components=n_components, comparison=True)
+        _, W_nmfs_j, _ = nmf_grid_search(np.copy(Ws)[len(Ws)//2:], n_components=n_components, comparison=True)
         correlations, rhos = correlate_nmf_components_(W_nmfs_i, W_nmfs_j)
         plot_nmf_correlations(out_path=out_path, correlations=correlations, thresholds=rhos, n_components=n_components)
 
@@ -151,7 +151,7 @@ def aggregate_weights(
         save_all_components_(out_path=out_path, W_nmfs=W_nmfs, n_components=n_components, file_format=out_format)
     else:
         save_argmax_components_(out_path=out_path, W_nmf=W_nmf_argmax, file_format=out_format)
-    #plot r2 scores as a function of the number of latent components in the grid
+    #plot r2 scores as a function of the number of latent components
     plot_r2_scores(out_path=out_path, r2_scores=mean_r2_scores, n_components=n_components)
 
 if __name__ == '__main__':
