@@ -124,17 +124,12 @@ def run(
     logger.setLevel(logging.INFO)
     #load triplets into memory
     train_triplets, test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir)
-    #number of unique items in the data matrix
-    n_items = torch.max(train_triplets).item()
-    if torch.min(train_triplets).item() == 0:
-        n_items += 1
-    #initialize an identity matrix of size n_items x n_items for one-hot-encoding of triplets
-    I = torch.eye(n_items)
+    n_items = utils.get_nitems(train_triplets)
     #load train and test mini-batches
     train_batches, val_batches = utils.load_batches(
                                                   train_triplets=train_triplets,
                                                   test_triplets=test_triplets,
-                                                  I=I,
+                                                  n_items=n_items,
                                                   batch_size=batch_size,
                                                   sampling_method=sampling_method,
                                                   rnd_seed=rnd_seed,

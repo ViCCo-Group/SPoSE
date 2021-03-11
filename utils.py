@@ -20,6 +20,7 @@ __all__ = [
             'get_nneg_dims',
             'get_ref_indices',
             'get_results_files',
+            'get_nitems',
             'kld_online',
             'kld_offline',
             'load_batches',
@@ -178,17 +179,31 @@ def load_data(device:torch.device, triplets_dir:str) -> Tuple[torch.Tensor, torc
         test_triplets = torch.from_numpy(test_triplets).to(device).type(torch.LongTensor)
     return train_triplets, test_triplets
 
+def get_nitems(train_triplets:torch.Tensor) -> int:
+    #number of unique items in the data matrix
+    n_items = torch.max(train_triplets).item()
+    if torch.min(train_triplets).item() == 0:
+        n_items += 1
+    return n_items
+
 def load_batches(
                  train_triplets:torch.Tensor,
                  test_triplets:torch.Tensor,
-                 I:torch.Tensor,
+                 n_items:int,
                  batch_size:int,
-                 sampling_method:str,
-                 rnd_seed:int,
+                 inference:bool=False,
+                 sampling_method:str=None,
+                 rnd_seed:int=None,
                  multi_proc:bool=False,
-                 n_gpus=None,
+                 n_gpus:int=None,
                  p=None,
                  ):
+    #initialize an identity matrix of size n_items x n_items for one-hot-encoding of triplets
+    I = torch.eye(n_items)
+    if inference:
+        assert train_triplets is None
+        test_batches = BatchGenerator(I=I, dataset=test_triplets, batch_size=batch_size, sampling_method=None, p=None)
+        return test_batches
     if (multi_proc and n_gpus > 1):
         if sampling_method == 'soft':
             warnings.warn(f'...Soft sampling cannot be used in a multi-process distributed training setting.', RuntimeWarning)
@@ -200,7 +215,7 @@ def load_batches(
         train_batches = DataLoader(dataset=train_set, batch_size=batch_size, sampler=train_sampler, num_workers=n_gpus)
         val_batches = DataLoader(dataset=val_set, batch_size=batch_size, shuffle=False, num_workers=n_gpus)
     else:
-        #create train and validation mini-batches
+        #create two iterators of train and validation mini-batches respectively
         train_batches = BatchGenerator(I=I, dataset=train_triplets, batch_size=batch_size, sampling_method=sampling_method, p=p)
         val_batches = BatchGenerator(I=I, dataset=test_triplets, batch_size=batch_size, sampling_method=None, p=None)
     return train_batches, val_batches
