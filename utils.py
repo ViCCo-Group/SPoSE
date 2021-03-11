@@ -16,7 +16,6 @@ __all__ = [
             'fill_diag',
             'get_cut_off',
             'get_digits',
-            'get_image_combinations',
             'get_optim_',
             'get_nneg_dims',
             'get_ref_indices',
@@ -29,7 +28,6 @@ __all__ = [
             'load_data',
             'load_inds_and_item_names',
             'load_model',
-            'load_searchlight_imgs',
             'load_sparse_codes',
             'load_ref_images',
             'load_targets',
@@ -53,7 +51,7 @@ __all__ = [
             'tripletize_data',
             'validation',
         ]
-
+        
 import json
 import logging
 import math
