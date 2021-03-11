@@ -208,23 +208,28 @@ def run(
                 train_losses = checkpoint['train_losses']
                 val_losses = checkpoint['val_losses']
                 nneg_d_over_time = checkpoint['nneg_d_over_time']
+                loglikelihoods = checkpoint['loglikelihoods']
+                complexity_losses = checkpoint['complexity_costs']
                 print(f'...Loaded model and optimizer state dicts from previous run. Starting at epoch {start}.\n')
             except RuntimeError:
                 print(f'...Loading model and optimizer state dicts failed. Check whether you are currently using a different set of model parameters.\n')
                 start = 0
                 train_accs, val_accs = [], []
                 train_losses, val_losses = [], []
+                loglikelihoods, complexity_losses = [], []
                 nneg_d_over_time = []
         else:
             start = 0
             train_accs, val_accs = [], []
             train_losses, val_losses = [], []
+            loglikelihoods, complexity_losses = [], []
             nneg_d_over_time = []
     else:
         os.makedirs(model_dir)
         start = 0
         train_accs, val_accs = [], []
         train_losses, val_losses = [], []
+        loglikelihoods, complexity_losses = [], []
         nneg_d_over_time = []
 
     ################################################
@@ -287,7 +292,6 @@ def run(
         val_losses.append(avg_val_loss)
         val_accs.append(avg_val_acc)
 
-        logger.info(f'Process: {process_id}')
         logger.info(f'Epoch: {epoch+1}/{epochs}')
         logger.info(f'Train acc: {avg_train_acc:.3f}')
         logger.info(f'Train loss: {avg_train_loss:.3f}')
@@ -327,6 +331,8 @@ def run(
                                 'val_losses': val_losses,
                                 'val_accs': val_accs,
                                 'nneg_d_over_time': nneg_d_over_time,
+                                'loglikelihoods': loglikelihoods,
+                                'complexity_costs': complexity_losses,
                                 }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
             else:
                 torch.save({
@@ -339,12 +345,14 @@ def run(
                             'val_losses': val_losses,
                             'val_accs': val_accs,
                             'nneg_d_over_time': nneg_d_over_time,
+                            'loglikelihoods': loglikelihoods,
+                            'complexity_costs': complexity_losses,
                             }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
 
-            logger.info(f'Saving model parameters at epoch {epoch+1}')
+            logger.info(f'Saving model parameters at epoch {epoch+1}\n')
 
             if (epoch + 1) > window_size:
-                #check termination condition
+                #check termination condition (we want to train until convergence)
                 lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
                 if (lmres.slope > 0) or (lmres.pvalue > pval_thres):
                     break
@@ -355,7 +363,7 @@ def run(
     logger.info(f'\nOptimization finished after {epoch+1} epochs for lambda: {lmbda}\n')
 
     if (version == 'deterministic' and plot_dims):
-        logger.info(f'\nPlotting number of non-negative dimensions as a function of time for process: {process_id}\n')
+        logger.info(f'\nPlotting number of non-negative dimensions as a function of time for lambda: {lmbda}\n')
         plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
 
     logger.info(f'\nPlotting model performances over time for lambda: {lmbda}')

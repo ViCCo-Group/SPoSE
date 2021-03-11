@@ -16,7 +16,6 @@ __all__ = [
             'fill_diag',
             'get_cut_off',
             'get_digits',
-            'get_optim_',
             'get_nneg_dims',
             'get_ref_indices',
             'get_results_files',
@@ -48,10 +47,9 @@ __all__ = [
             'sort_weights',
             'trinomial_loss',
             'trinomial_probs',
-            'tripletize_data',
             'validation',
         ]
-        
+
 import json
 import logging
 import math

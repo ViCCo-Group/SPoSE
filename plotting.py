@@ -9,12 +9,25 @@ __all__ = [
             'plot_multiple_performances',
             'plot_pruning_results',
             'plot_single_performance',
+            'plot_val_accs_across_seeds',
+            'plot_complexities_and_loglikelihoods',
+            'plot_dim_correlations',
+            'plot_dim_evolution',
+            'plot_kld_violins',
             ]
+
+import json
 import os
+import re
+import torch
+
+from os.path import join as pjoin
+from typing import List, Tuple, Dict
 
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import pandas as pd
 
 def plot_nneg_dims_over_time(plots_dir:str, nneg_d_over_time:list) -> None:
     """plot number of non-negative dimensions as a function of time (i.e., epochs)"""
@@ -36,18 +49,17 @@ def plot_nneg_dims_over_time(plots_dir:str, nneg_d_over_time:list) -> None:
     ax.set_xlabel('Epochs')
     ax.set_ylabel('Number of non-negative dimensions')
 
-    PATH = os.path.join(plots_dir, 'nneg_dimensions')
+    PATH = pjoin(plots_dir, 'nneg_dimensions')
     if not os.path.exists(PATH):
         os.makedirs(PATH)
 
-    plt.savefig(os.path.join(PATH, 'nneg_dimensions_over_time.png'))
+    plt.savefig(pjoin(PATH, 'nneg_dimensions_over_time.png'))
     plt.close()
 
 def plot_single_performance(
                             plots_dir:str,
                             val_accs:list,
                             train_accs:list,
-                            lmbda:float,
                             ) -> None:
     fig = plt.figure(figsize=(10, 6), dpi=100)
     ax = plt.subplot(111)
@@ -66,14 +78,13 @@ def plot_single_performance(
     ax.set_xlim([0, len(val_accs)])
     ax.set_xlabel(r'Epochs')
     ax.set_ylabel(r'Accuracy')
-    ax.set_title(f'$\lambda$ = {lmbda:.5f}')
     ax.legend(fancybox=True, shadow=True, loc='lower left')
 
-    PATH = os.path.join(plots_dir, 'grid_search')
+    PATH = pjoin(plots_dir, 'grid_search')
     if not os.path.exists(PATH):
         os.makedirs(PATH)
 
-    plt.savefig(os.path.join(PATH, 'single_model_performance_over_time.png'))
+    plt.savefig(pjoin(PATH, 'single_model_performance_over_time.png'))
     plt.close()
 
 def plot_multiple_performances(
@@ -112,11 +123,31 @@ def plot_multiple_performances(
     for ax in axes.flat:
         ax.label_outer()
 
-    PATH = os.path.join(plots_dir, 'grid_search')
+    PATH = pjoin(plots_dir, 'grid_search')
     if not os.path.exists(PATH):
         os.makedirs(PATH)
 
-    plt.savefig(os.path.join(PATH, 'model_performances_over_time.png'))
+    plt.savefig(pjoin(PATH, 'model_performances_over_time.png'))
+    plt.close()
+
+def plot_val_accs_across_seeds(plots_dir:str, lmbdas:np.ndarray, val_accs:np.ndarray) -> None:
+    fig = plt.figure(figsize=(14, 8), dpi=100)
+    ax = plt.subplot(111)
+
+    #hide the right and top spines
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    #only show ticks on the left (y-axis) and bottom (x-axis) spines
+    ax.yaxis.set_ticks_position('left')
+    ax.xaxis.set_ticks_position('bottom')
+
+    ax.plot(lmbdas, val_accs*100)
+    ax.set_xticks(lmbdas)
+    ax.set_xlabel(f'$\lambda')
+    ax.set_ylabel(r'Val acc (%)')
+
+    plt.savefig(pjoin(plots_dir, 'lambda_search_results.png'))
     plt.close()
 
 def plot_grid_search_results(
@@ -128,7 +159,6 @@ def plot_grid_search_results(
                             subfolder:str,
                             vision_model=None,
                             layer=None,
-                            show_plot:bool=False,
 ) -> None:
     fig = plt.figure(figsize=(16, 8), dpi=100)
     ax = plt.subplot(111)
@@ -155,16 +185,116 @@ def plot_grid_search_results(
 
     if modality == 'visual':
         assert isinstance(vision_model, str) and isinstance(layer, str), 'name of vision model and corresponding layer are required'
-        PATH = os.path.join(plot_dir, f'seed{rnd_seed}', modality, vision_model, layer, version, subfolder)
+        PATH = pjoin(plot_dir, f'seed{rnd_seed}', modality, vision_model, layer, version, subfolder)
     else:
-        PATH = os.path.join(plot_dir, f'seed{rnd_seed}', modality, version, subfolder)
+        PATH = pjoin(plot_dir, f'seed{rnd_seed}', modality, version, subfolder)
     if not os.path.exists(PATH):
         os.makedirs(PATH)
 
-    plt.savefig(os.path.join(PATH, 'lambda_search_results.png'))
-    if show_plot:
-        plt.show()
-        plt.clf()
+    plt.savefig(pjoin(PATH, 'lambda_search_results.png'))
+    plt.close()
+
+def plot_dim_correlations(
+                          W_mu_vspose:torch.Tensor,
+                          W_mu_dspose:torch.Tensor,
+                          plots_dir:str,
+                          epoch:int,
+                          ) -> None:
+    """Pearson correlations between top k VSPoSE and dSPoSE dimensions"""
+    fig = plt.figure(figsize=(16, 8), dpi=200)
+    ax = plt.subplot(111)
+
+    #hide the right and top spines
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    #only show ticks on the left (y-axis) and bottom (x-axis) spines
+    ax.yaxis.set_ticks_position('left')
+    ax.xaxis.set_ticks_position('bottom')
+
+    top_k = 50
+    rhos = np.array([pearsonr(dspose_d, vspose_d)[0] for dspose_d, vspose_d in zip(W_mu_dspose[:, :top_k].T, W_mu_vspose[:, :top_k].T)])
+    ax.bar(np.arange(len(rhos)), rhos, alpha=.5)
+    ax.set_ylabel(r'$\rho$', fontsize=13)
+    ax.set_xlabel('Dimension', fontsize=13)
+    ax.set_title(f'Epoch: {epoch}', fontsize=13)
+
+    PATH = pjoin(plots_dir, 'dim_correlations')
+    if not os.path.exists(PATH):
+        os.makedirs(PATH)
+
+    plt.savefig(pjoin(PATH, f'dim_correlations_{epoch:03d}.png'))
+    plt.close()
+
+def plot_dim_evolution(
+                        W_mu_sorted:torch.Tensor,
+                        W_l_sorted:torch.Tensor,
+                        plots_dir:str,
+                        epoch:int,
+                        ) -> None:
+    """barplot of |W_mu|_1 and mean W_l values"""
+    fig = plt.figure(figsize=(16, 8), dpi=200)
+    ax = plt.subplot(111)
+
+    #hide the right and top spines
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    #only show ticks on the left (y-axis) and bottom (x-axis) spines
+    ax.yaxis.set_ticks_position('left')
+    ax.xaxis.set_ticks_position('bottom')
+
+    #bring modes (mu) and scales (lambdas) onto the same scale (0, 1]
+    W_mu_l1_norms = W_mu_sorted.norm(p=1, dim=0)
+    W_mu_l1_norms /= W_mu_l1_norms.max().item()
+
+    W_l_means = W_l_sorted.mean(dim=0)
+    W_l_means /= W_l_means.max().item()
+
+    ax.bar(np.arange(W_mu_sorted.shape[1]), W_mu_l1_norms, alpha=.5, label=r'$||W_{\mu}||_{1}$')
+    ax.bar(np.arange(W_l_sorted.shape[1]) + .25, W_l_means, alpha=.5, label=r'$\overline{W}_{\lambda}$')
+    ax.set_xlabel('Dimension', fontsize=13)
+    ax.set_title(f'Epoch: {epoch}', fontsize=13)
+    ax.legend(fancybox=True, shadow=True, loc='upper right')
+
+    PATH = pjoin(plots_dir, 'dim_evolutions')
+    if not os.path.exists(PATH):
+        os.makedirs(PATH)
+
+    plt.savefig(pjoin(PATH, f'dim_evolution_{epoch:03d}.png'))
+    plt.close()
+
+def plot_complexities_and_loglikelihoods(
+                                         plots_dir:str,
+                                         loglikelihoods:list,
+                                         complexity_losses:list,
+                                         ) -> None:
+    losses = [loglikelihoods, complexity_losses]
+    labels = [r'$L^{E}$', r'$L^{C}$']
+    ylabels = [r'Cross-entropy loss', r'Complexity cost']
+    n_cols = len(losses)
+    fig, axes = plt.subplots(1, n_cols, figsize=(16, 10), dpi=100)
+
+    for i, ax in enumerate(axes):
+        #hide the right and top spines
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+
+        #only show ticks on the left (y-axis) and bottom (x-axis) spines
+        ax.yaxis.set_ticks_position('left')
+        ax.xaxis.set_ticks_position('bottom')
+
+        ax.plot(losses[i],'-o', alpha=.5, label=labels[i])
+        ax.set_xlim([0, len(losses[i])])
+        ax.set_xlabel(r'Epochs')
+        ax.set_ylabel(ylabels[i])
+        ax.legend(fancybox=True, shadow=True, loc='upper right')
+
+    PATH = pjoin(plots_dir, 'losses')
+    if not os.path.exists(PATH):
+        os.makedirs(PATH)
+
+    plt.savefig(pjoin(PATH, 'llikelihood_and_complexity_over_time.png'))
     plt.close()
 
 def plot_aggregated_klds(
@@ -284,4 +414,51 @@ def plot_pruning_results(
         os.makedirs(PATH)
 
     plt.savefig(os.path.join(PATH, f'val_acc_against_pruned_weights_{reduction}.png'))
+    plt.close()
+
+
+def plot_r2_scores(out_path:str, r2_scores:np.ndarray, nmf_components:list) -> None:
+    fig = plt.figure(figsize=(14, 8), dpi=150)
+    ax = plt.subplot(111)
+
+    #hide the right and top spines
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    #only show ticks on the left (y-axis) and bottom (x-axis) spines
+    ax.yaxis.set_ticks_position('left')
+    ax.xaxis.set_ticks_position('bottom')
+
+    ax.plot(r2_scores)
+    ax.set_xticks(range(len(r2_scores)))
+    ax.set_xticklabels(nmf_components, fontsize=12)
+    ax.set_xlabel('Latent dimensionality', fontsize=13)
+    ax.set_ylabel(r'$r2$ score', fontsize=13)
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_path, 'nmf_components_vs_r2_scores.png'))
+    plt.close()
+
+
+def plot_nmf_correlations(out_path:str, correlations:List[Tuple[float]], thresholds:np.ndarray, n_components:list) -> None:
+    fig = plt.figure(figsize=(14, 8), dpi=150)
+    ax = plt.subplot(111)
+
+    #hide the right and top spines
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+
+    #only show ticks on the left (y-axis) and bottom (x-axis) spines
+    ax.yaxis.set_ticks_position('left')
+    ax.xaxis.set_ticks_position('bottom')
+
+    for i, r in enumerate(correlations):
+        ax.plot(np.array(r)*100, '-x', alpha=.7, label=f'$>{thresholds[i]:.2f}$')
+
+    ax.set_xticks(range(len(correlations[0])))
+    ax.set_xticklabels(n_components, fontsize=11)
+    ax.set_xlabel('Latent dimensionality', fontsize=12)
+    ax.set_ylabel(r'$\%$ of dimensions', fontsize=12)
+    ax.legend(fancybox=True, title=r"Pearson's $r$", shadow=True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_path, 'correlations_across_random_sets_of_nmfs.png'))
     plt.close()
