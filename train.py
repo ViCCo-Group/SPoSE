@@ -79,7 +79,7 @@ def setup_logging(file:str, dir:str='./log_files/'):
         os.makedirs(dir)
     #create logger at root level (no need to provide specific name, as our logger won't have children)
     logger = logging.getLogger()
-    logging.basicConfig(filename=dir + file, filemode='w', level=logging.DEBUG)
+    logging.basicConfig(filename=os.path.join(dir, file), filemode='w', level=logging.DEBUG)
     #add console handler to logger
     if len(logger.handlers) < 1:
         #create console handler and set level to debug (lowest severity level)
@@ -120,7 +120,7 @@ def run(
         torch.backends.cudnn.benchmark = False
 
     #initialise logger and start logging events
-    logger = setup_logging(file='spose_model_optimization.log')
+    logger = setup_logging(file='spose_model_optimization.log', dir=f'./log_files/model_{process_id}/')
     logger.setLevel(logging.INFO)
     #load triplets into memory
     train_triplets, test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir)
