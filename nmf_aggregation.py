@@ -120,7 +120,7 @@ def nmf_grid_search(
             r2_scores[k] = r2_score(y_test, y_pred)
         avg_r2_scores[j] = np.mean(r2_scores)
         W_nmfs.append(remove_zeros(sort_dims_(W_nmf.T)))
-    W_nmf_argmax = remove_zeros(sort_dims_(W_nmfs[np.argmax(avg_r2_scores)]))
+    W_nmf_argmax = W_nmfs[np.argmax(avg_r2_scores)]
     return W_nmf_argmax.T, W_nmfs, avg_r2_scores
 
 def aggregate_weights(
