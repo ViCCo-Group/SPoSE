@@ -56,7 +56,7 @@ def aggregate_val_accs(in_path:str) -> np.ndarray:
     return np.mean(val_accs)
 
 def get_weights(in_path:str) -> list:
-    return np.array([np.load(os.path.join(in_path, m.name, 'weight_sorted.npy')) for m in os.scandir(in_path) if m.is_dir() and m.name[-2:].isdigit()])
+    return np.array([np.load(os.path.join(in_path, m.name, 'weights_sorted.npy')) for m in os.scandir(in_path) if m.is_dir() and m.name[-2:].isdigit()])
 
 def save_all_components_(out_path:str, W_nmfs:List[np.ndarray], n_components:List[float], file_format:str) -> None:
     for d, W_nmf in zip(n_components, W_nmfs):
