@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import argparse
 import json
 import sys
 import os
@@ -41,7 +42,7 @@ def parseargs():
     aa('--compare_nmfs', action='store_true',
         help='compare different NMF weight matrices against each other to test their reproducibility')
     aa('--rnd_seed', type=int, default=42,
-        help='random seed for reproducibility'))
+        help='random seed for reproducibility')
     args = parser.parse_args()
     return args
 
@@ -55,7 +56,7 @@ def aggregate_val_accs(in_path:str) -> np.ndarray:
     return np.mean(val_accs)
 
 def get_weights(in_path:str) -> list:
-    return [np.load(os.path.join(in_path, m.name, 'weight_sorted.npy')) for m in os.scandir(in_path) if m.is_dir() and m.name[-2:].isdigit()]
+    return np.array([np.load(os.path.join(in_path, m.name, 'weight_sorted.npy')) for m in os.scandir(in_path) if m.is_dir() and m.name[-2:].isdigit()])
 
 def save_all_components_(out_path:str, W_nmfs:List[np.ndarray], n_components:List[float], file_format:str) -> None:
     for d, W_nmf in zip(n_components, W_nmfs):
@@ -101,8 +102,8 @@ def nmf_grid_search(
 ):
     np.random.seed(rnd_seed)
     rkf = RepeatedKFold(n_splits=k_folds, n_repeats=n_repeats, random_state=rnd_seed)
-    W_held_out = Ws_mu.pop(np.random.choice(len(Ws_mu))).T
-    X = np.concatenate(Ws_mu, axis=0).T
+    W_held_out = Ws_mu.pop(np.random.choice(len(Ws_mu)))
+    X = np.concatenate(Ws_mu, axis=1)
     X = X[:, np.random.permutation(X.shape[1])]
     avg_r2_scores = np.zeros(len(n_components))
     W_nmfs = []
@@ -132,20 +133,21 @@ def aggregate_weights(
                       ) -> None:
     mean_val_acc = aggregate_val_accs(in_path)
     Ws = get_weights(in_path)
-    W_nmf_argmax, W_nmfs, mean_r2_scores = nmf_grid_search(np.copy(Ws), n_components=n_components)
+    Ws_copy = Ws[:]
+    W_nmf_argmax, W_nmfs, mean_r2_scores = nmf_grid_search(Ws_copy, n_components=n_components)
 
     #make sure that output directory exists
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
     if compare_nmfs:
-        _, W_nmfs_i, _ = nmf_grid_search(np.copy(Ws)[:len(Ws)//2], n_components=n_components, comparison=True)
-        _, W_nmfs_j, _ = nmf_grid_search(np.copy(Ws)[len(Ws)//2:], n_components=n_components, comparison=True)
+        _, W_nmfs_i, _ = nmf_grid_search(Ws[:len(Ws)//2], n_components=n_components, comparison=True)
+        _, W_nmfs_j, _ = nmf_grid_search(Ws[len(Ws)//2:], n_components=n_components, comparison=True)
         correlations, rhos = correlate_nmf_components_(W_nmfs_i, W_nmfs_j)
         plot_nmf_correlations(out_path=out_path, correlations=correlations, thresholds=rhos, n_components=n_components)
 
     with open(os.path.join(out_path, 'aggregated_results.json'), 'w') as f:
-        json.dump({'mean_val_acc': mean_val_acc}, results_file)
+        json.dump({'mean_val_acc': mean_val_acc}, f)
 
     if save_all_components:
         save_all_components_(out_path=out_path, W_nmfs=W_nmfs, n_components=n_components, file_format=out_format)
