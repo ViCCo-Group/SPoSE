@@ -361,10 +361,7 @@ if __name__ == '__main__':
         print(f'PyTorch CUDA version: {torch.version.cuda}\n')
         n_procs = n_gpus
     else:
-        if args.n_models:
-            n_procs = args.n_models
-        else:
-            n_procs = os.cpu_count()-1
+        n_procs = args.n_models if args.n_models else os.cpu_count()-1
         print(f'\nUsing {n_procs} CPU cores for parallel training\n')
 
     torch.multiprocessing.spawn(
