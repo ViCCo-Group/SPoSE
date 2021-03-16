@@ -364,8 +364,7 @@ if __name__ == '__main__':
         if args.n_models:
             n_procs = args.n_models
         else:
-            import multiprocessing
-            n_procs = multiprocessing.cpu_count()-1
+            n_procs = os.cpu_count()-1
         print(f'\nUsing {n_procs} CPU cores for parallel training\n')
 
     torch.multiprocessing.spawn(
