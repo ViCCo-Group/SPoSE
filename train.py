@@ -45,8 +45,6 @@ def parseargs():
         help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/rnd_seed/)')
     aa('--plots_dir', type=str, default='./plots/',
         help='optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/rnd_seed/)')
-    aa('--beta', type=float, default=None,
-        help='determines softmax temperature in probabilistic tripletizing approach')
     aa('--learning_rate', type=float, default=0.001,
         help='learning rate to be used in optimizer')
     aa('--lmbda', type=float,
@@ -116,7 +114,6 @@ def run(
         lmbda:float,
         lr:float,
         p=None,
-        beta=None,
         plot_dims:bool=True,
         show_progress:bool=True,
 ):
@@ -427,6 +424,5 @@ if __name__ == "__main__":
         lmbda=args.lmbda,
         lr=args.learning_rate,
         p=args.p,
-        beta=args.beta,
         plot_dims=args.plot_dims,
         )
