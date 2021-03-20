@@ -37,7 +37,7 @@ def parseargs():
     aa('--task', type=str, default='odd_one_out',
         choices=['odd_one_out', 'similarity_task'])
     aa('--modality', type=str, default='behavioral/',
-        choices=['behavioral/', 'text/', 'visual/', 'neural/'],
+        #choices=['behavioral/', 'text/', 'visual/', 'neural/'],
         help='define for which modality SPoSE should be perform specified task')
     aa('--triplets_dir', type=str,
         help='directory from where to load triplets')
