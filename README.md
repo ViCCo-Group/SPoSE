@@ -7,15 +7,13 @@
 #### Train SPoSE model 
 
 ```
-  python main.py
+  python train.py
   
  --task (specify whether you'd like the model to perform an odd-one-out (i.e., 3AFC) or similarity (i.e., 2AFC) task)
  --modality (define for which modality specified task should be performed by SPoSE (e.g., behavioral, text, visual))
  --triplets_dir (in case you have tripletized data, provide directory from where to load triplets)
  --results_dir (optional specification of results directory (if not provided will resort to ./results/modality/version/dim/lambda/seed/))
  --plots_dir (optional specification of directory for plots (if not provided will resort to ./plots/modality/version/dim/lambda/seed/)
- --tripletize (if you have pre-trained embeddings for N items or objects, the code can automatically tripletize them for you)
- --beta (if you want your pre-trained embeddings to be tripletized probabilistically, you can specify a beta value to determine the softmax temperature)
  --learning_rate (learning rate to be used in optimizer)
  --lmbda (lambda value determines l1-norm fraction to regularize loss; will be divided by number of items in the original data matrix)
  --embed_dim (embedding dimensionality, i.e., output size of the neural network)
@@ -33,7 +31,7 @@
 Here is an example call for single-process training:
 
 ```
-python main.py --task odd_one_out --modality behavioral/ --triplets_dir ./triplets/behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 90 --batch_size 128 --epochs 500 --window_size 30 --sampling_method soft --p 0.7 --plot_dims --device cuda:0 --rnd_seed 42
+python train.py --task odd_one_out --modality behavioral/ --triplets_dir ./triplets/behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 100 --batch_size 128 --epochs 500 --window_size 50 --sampling_method soft --p 0.7 --plot_dims --device cuda --rnd_seed 42
 ```
 
 Here is an example call for single-node multi-process GPU training:
