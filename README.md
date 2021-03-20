@@ -7,15 +7,14 @@
 #### Train SPoSE model 
 
 ```
-  python main.py
+  python train.py
   
  --task (specify whether you'd like the model to perform an odd-one-out (i.e., 3AFC) or similarity (i.e., 2AFC) task)
  --modality (define for which modality specified task should be performed by SPoSE (e.g., behavioral, text, visual))
  --triplets_dir (in case you have tripletized data, provide directory from where to load triplets)
  --results_dir (optional specification of results directory (if not provided will resort to ./results/modality/version/dim/lambda/seed/))
  --plots_dir (optional specification of directory for plots (if not provided will resort to ./plots/modality/version/dim/lambda/seed/)
- --tripletize (if you have pre-trained embeddings for N items or objects, the code can automatically tripletize them for you)
- --beta (if you want your pre-trained embeddings to be tripletized probabilistically, you can specify a beta value to determine the softmax temperature)
+ --n_models (number of models to run in parallel)
  --learning_rate (learning rate to be used in optimizer)
  --lmbda (lambda value determines l1-norm fraction to regularize loss; will be divided by number of items in the original data matrix)
  --embed_dim (embedding dimensionality, i.e., output size of the neural network)
