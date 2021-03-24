@@ -399,62 +399,26 @@ def collect_choices(probas:np.ndarray, human_choices:np.ndarray, model_choices:d
 def logsumexp_(logits:torch.Tensor) -> torch.Tensor:
     return torch.exp(logits - torch.logsumexp(logits, dim=1)[..., None])
 
-def mc_sampling(model, batch:torch.Tensor, temperature:torch.Tensor, task:str, n_samples:int, device:torch.device) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    n_alternatives = 3 if task == 'odd_one_out' else 2
-    sampled_probas = torch.zeros(n_samples, batch.shape[0] // n_alternatives, n_alternatives).to(device)
-    sampled_choices = torch.zeros(n_samples, batch.shape[0] // n_alternatives).to(device)
-
-    for k in range(n_samples):
-        logits, _, _ = model(batch, device)
-        anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
-        similarities = compute_similarities(anchor, positive, negative, task)
-        soft_choices = softmax(similarities, temperature)
-        #stacked_sims = torch.stack(similarities, dim=-1)
-        #probas = F.softmax(logsumexp_(stacked_sims), dim=1)
-        probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
-
-        sampled_probas[k] += probas
-        sampled_choices[k] +=  soft_choices
-
-    probas = sampled_probas.mean(dim=0).cpu().numpy()
-    val_acc = accuracy_(probas)
-    soft_choices = sampled_choices.mean(dim=0)
-    val_loss = torch.mean(-torch.log(soft_choices))
-    return val_acc, val_loss, probas
-
-def test(
-        model,
-        test_batches,
-        version:str,
-        task:str,
-        device:torch.device,
-        batch_size=None,
-        n_samples=None,
-) -> Tuple:
+def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, batch_size:int) -> Tuple[float, np.ndarray, dict]:
     probas = torch.zeros(int(len(test_batches) * batch_size), 3)
     temperature = torch.tensor(1.).to(device)
     model_choices = defaultdict(list)
-    model.eval()
-    with torch.no_grad():
-        batch_accs = torch.zeros(len(test_batches))
-        for j, batch in enumerate(test_batches):
-            batch = batch.to(device)
-            if version == 'variational':
-                assert isinstance(n_samples, int), '\nOutput logits of variational neural networks have to be averaged over different samples through mc sampling.\n'
-                test_acc, _, batch_probas = mc_sampling(model=model, batch=batch, temperature=temperature, task=task, n_samples=n_samples, device=device)
-            else:
-                logits = model(batch)
-                anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
-                similarities = compute_similarities(anchor, positive, negative, task)
-                #stacked_sims = torch.stack(similarities, dim=-1)
-                #batch_probas = F.softmax(logsumexp_(stacked_sims), dim=1)
-                batch_probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
-                test_acc = choice_accuracy(anchor, positive, negative, task)
+    W = torch.from_numpy(W)
+    batch_accs = torch.zeros(len(test_batches))
+    for j, batch in enumerate(test_batches):
+        batch = batch.to(W.device)
+        logits = batch @ W.T
+        anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
+        similarities = compute_similarities(anchor, positive, negative, task)
+        #stacked_sims = torch.stack(similarities, dim=-1)
+        #batch_probas = F.softmax(logsumexp_(stacked_sims), dim=1)
+        batch_probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
+        test_acc = choice_accuracy(anchor, positive, negative, task)
 
-            probas[j*batch_size:(j+1)*batch_size] += batch_probas
-            batch_accs[j] += test_acc
-            human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
-            model_choices = collect_choices(batch_probas, human_choices, model_choices)
+        probas[j*batch_size:(j+1)*batch_size] += batch_probas
+        batch_accs[j] += test_acc
+        human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
+        model_choices = collect_choices(batch_probas, human_choices, model_choices)
 
     probas = probas.cpu().numpy()
     probas = probas[np.where(probas.sum(axis=1) != 0.)]
@@ -580,19 +544,20 @@ def save_weights_(out_path:str, W_mu:torch.tensor) -> None:
     with open(pjoin(out_path, 'weights_sorted.npy'), 'wb') as f:
         np.save(f, W_sorted)
 
-def load_weights(model, version:str) -> Tuple[torch.Tensor]:
-    if version == 'variational':
-        W_mu = model.encoder_mu[0].weight.data.T.detach()
-        if hasattr(model.encoder_mu[0].bias, 'data'):
-            W_mu += model.encoder_mu[0].bias.data.detach()
-        W_b = model.encoder_b[0].weight.data.T.detach()
-        if hasattr(model.encoder_b[0].bias, 'data'):
-            W_b += model.encoder_b[0].bias.data.detach()
-        W_mu = F.relu(W_mu)
-        W_b = F.softplus(W_b)
-        return W_mu, W_b
-    else:
-        return model.fc.weight.T.detach()
+def del_weights(path:str, weights:List[np.ndarray]) -> None:
+    for w in weights:
+        os.remove(pjoin(path, w))
+
+def load_weights(model_path:str) -> np.ndarray:
+    weights = sorted([w.name for w in os.scandir(model_path) if w.is_file() and w.name.endswith('txt')])
+    W = weights.pop()
+    del_weights(model_path, weights)
+    return W
+
+def load_final_weights(out_path:str) -> None:
+    with open(pjoin(out_path, 'weights_sorted.npy'), 'rb') as f:
+        W = np.load(f)
+    return W
 
 def prune_weights(model, version:str, indices:torch.Tensor, fraction:float):
     indices = indices[:int(len(indices)*fraction)]
