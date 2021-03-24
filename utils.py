@@ -573,18 +573,12 @@ def load_model(
     model.load_state_dict(checkpoint['model_state_dict'])
     return model
 
-def save_weights_(version:str, out_path:str, W_mu:torch.tensor, W_b:torch.tensor=None) -> None:
-    if version == 'variational':
-        with open(pjoin(out_path, 'weights_mu_sorted.npy'), 'wb') as f:
-            np.save(f, W_mu)
-        with open(pjoin(out_path, 'weights_b_sorted.npy'), 'wb') as f:
-            np.save(f, W_b)
-    else:
-        W_mu = W_mu.detach().cpu().numpy()
-        W_mu = remove_zeros(W_mu)
-        W_sorted = np.abs(W_mu[np.argsort(-np.linalg.norm(W_mu, ord=1, axis=1))]).T
-        with open(pjoin(out_path, 'weights_sorted.npy'), 'wb') as f:
-            np.save(f, W_sorted)
+def save_weights_(out_path:str, W_mu:torch.tensor) -> None:
+    W_mu = W_mu.detach().cpu().numpy()
+    W_mu = remove_zeros(W_mu)
+    W_sorted = np.abs(W_mu[np.argsort(-np.linalg.norm(W_mu, ord=1, axis=1))]).T
+    with open(pjoin(out_path, 'weights_sorted.npy'), 'wb') as f:
+        np.save(f, W_sorted)
 
 def load_weights(model, version:str) -> Tuple[torch.Tensor]:
     if version == 'variational':

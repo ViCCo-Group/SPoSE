@@ -31,24 +31,18 @@ def parseargs():
     parser = argparse.ArgumentParser()
     def aa(*args, **kwargs):
         parser.add_argument(*args, **kwargs)
-    aa('--version', type=str, default='deterministic',
-        choices=['deterministic', 'variational'],
-        help='whether to apply a deterministic or variational version of SPoSE')
     aa('--task', type=str, default='odd_one_out',
         choices=['odd_one_out', 'similarity_task'])
     aa('--modality', type=str, default='behavioral/',
-        #choices=['behavioral/', 'text/', 'visual/', 'neural/'],
         help='define for which modality SPoSE should be perform specified task')
     aa('--triplets_dir', type=str,
         help='directory from where to load triplets')
     aa('--results_dir', type=str, default='./results/',
-        help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/rnd_seed/)')
+        help='optional specification of results directory (if not provided will resort to ./results/modality/lambda/rnd_seed/)')
     aa('--plots_dir', type=str, default='./plots/',
-        help='optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/rnd_seed/)')
+        help='optional specification of directory for plots (if not provided will resort to ./plots/modality/lambda/rnd_seed/)')
     aa('--learning_rate', type=float, default=0.001,
         help='learning rate to be used in optimizer')
-    aa('--lmbda', type=float,
-        help='lambda value determines weight of l1-regularization')
     aa('--embed_dim', metavar='D', type=int, default=90,
         help='dimensionality of the embedding matrix')
     aa('--batch_size', metavar='B', type=int, default=100,
@@ -56,6 +50,8 @@ def parseargs():
         help='number of triplets in each mini-batch')
     aa('--epochs', metavar='T', type=int, default=500,
         help='maximum number of epochs to optimize SPoSE model for')
+    aa('--n_models', type=int, default=os.cpu_count()-1,
+        help='number of models to train in parallel (for CPU users: check number of cores; for GPU users: check number of GPUs at current node)')
     aa('--window_size', type=int, default=50,
         help='window size to be used for checking convergence criterion with linear regression')
     aa('--sampling_method', type=str, default='normal',
@@ -68,10 +64,6 @@ def parseargs():
         help='whether or not to plot the number of non-negative dimensions as a function of time after convergence')
     aa('--device', type=str, default='cpu',
         choices=['cpu', 'cuda', 'cuda:0', 'cuda:1'])
-    aa('--multi_proc', action='store_true',
-        help='whether to perform multi-process distributed GPU training')
-    aa('--local_rank', type=int, default=None,
-        help='specifies local rank of GPU in multi-process distributed training setting')
     aa('--rnd_seed', type=int, default=42,
         help='random seed for reproducibility')
     args = parser.parse_args()
@@ -83,7 +75,7 @@ def setup_logging(file:str, dir:str='./log_files/'):
         os.makedirs(dir)
     #create logger at root level (no need to provide specific name, as our logger won't have children)
     logger = logging.getLogger()
-    logging.basicConfig(filename=dir + file, filemode='w', level=logging.DEBUG)
+    logging.basicConfig(filename=os.path.join(dir, file), filemode='w', level=logging.DEBUG)
     #add console handler to logger
     if len(logger.handlers) < 1:
         #create console handler and set level to debug (lowest severity level)
@@ -97,8 +89,12 @@ def setup_logging(file:str, dir:str='./log_files/'):
         logger.addHandler(handler)
     return logger
 
+def get_lmbda_(idx:int) -> float:
+    lmbdas = np.arange(0.8, 0.9, 0.01)
+    return lmbdas[idx]
+
 def run(
-        version:str,
+        process_id:int,
         task:str,
         rnd_seed:int,
         modality:str,
@@ -111,7 +107,6 @@ def run(
         epochs:int,
         window_size:int,
         sampling_method:str,
-        lmbda:float,
         lr:float,
         p=None,
         plot_dims:bool=True,
@@ -141,45 +136,28 @@ def run(
     ########## settings ###########
     ###############################
 
-    #cutoff for significance (checking if slope is significantly decreasing)
-    pval_thres = .1
-    #softmax temperature
+    lmbda = get_lmbda_(process_id)
     temperature = torch.tensor(1.).to(device)
-    #deterministic version of SPoSE
     model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
-    #move model to current device
     model.to(device)
+    optim = Adam(model.parameters(), lr=lr)
 
     ################################################
     ############# Creating PATHs ###################
     ################################################
 
-    print(f'...Creating PATHs')
-    print()
+    print(f'\n...Creating PATHs.\n')
     if results_dir == './results/':
-        results_dir = os.path.join(results_dir, modality, version, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed:02d}')
+        results_dir = pjoin(results_dir, modality, 'deterministic', f'{embed_dim}d', f'seed{rnd_seed:02d}', str(lmbda))
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
     if plots_dir == './plots/':
-        plots_dir = os.path.join(plots_dir, modality, version, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed}')
+        plots_dir = pjoin(plots_dir, modality, 'deterministic', f'{embed_dim}d', f'seed{rnd_seed:02d}', str(lmbda))
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
-    model_dir = os.path.join(results_dir, 'model')
-
-    ################################################
-    ############## Data Parallelism ################
-    ################################################
-
-    if (multi_proc and n_gpus > 1):
-        model = nn.parallel.DistributedDataParallel(
-                                                    model,
-                                                    device_ids=[local_rank],
-                                                    output_device=local_rank,
-                                                    )
-    #initialise optimizer
-    optim = Adam(model.parameters(), lr=lr)
+    model_dir = pjoin(results_dir, 'model')
 
     #####################################################################
     ######### Load model from previous checkpoint, if available #########
@@ -191,11 +169,8 @@ def run(
             try:
                 checkpoints = list(map(get_digits, models))
                 last_checkpoint = np.argmax(checkpoints)
-                PATH = os.path.join(model_dir, models[last_checkpoint])
-                #TODO: figure out whether line below is really necessary to load model's checkpoints for single-node multi-proc distrib training
-                #torch.distributed.barrier()
-                map_location = {f'cuda:0': f'cuda:{local_rank}'} if (multi_proc and n_gpus > 1) else device
-                checkpoint = torch.load(PATH, map_location=map_location)
+                PATH = pjoin(model_dir, models[last_checkpoint])
+                checkpoint = torch.load(PATH, map_location=device)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optim.load_state_dict(checkpoint['optim_state_dict'])
                 start = checkpoint['epoch'] + 1
@@ -244,12 +219,10 @@ def run(
         batch_losses_train = torch.zeros(len(train_batches))
         batch_accs_train = torch.zeros(len(train_batches))
         for i, batch in enumerate(train_batches):
-            optim.zero_grad() #zero out gradients
+            optim.zero_grad()
             batch = batch.to(device)
             logits = model(batch)
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
-            #TODO: figure out why the line below is necessary if we don't use the variable probs anywhere else in the script
-            #probs = trinomial_probs(anchor, positive, negative, task)
             c_entropy = trinomial_loss(anchor, positive, negative, task, temperature)
             l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
             W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
@@ -278,17 +251,12 @@ def run(
         ################ validation ####################
         ################################################
 
-        avg_val_loss, avg_val_acc = validation(
-                                                model=model,
-                                                val_batches=val_batches,
-                                                version=version,
-                                                task=task,
-                                                device=device,
-                                                batch_size=batch_size,
-                                                )
+        avg_val_loss, avg_val_acc = validation(model, val_batches, 'deterministic', task, device)
+
         val_losses.append(avg_val_loss)
         val_accs.append(avg_val_acc)
 
+        logger.info(f'Process: {process_id}')
         logger.info(f'Epoch: {epoch+1}/{epochs}')
         logger.info(f'Train acc: {avg_train_acc:.3f}')
         logger.info(f'Train loss: {avg_train_loss:.3f}')
@@ -296,78 +264,39 @@ def run(
         logger.info(f'Val loss: {avg_val_loss:.3f}\n')
 
         if show_progress:
+            print("\n==============================================================================================================")
+            print(f'====== Process: {process_id} Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
+            print("==============================================================================================================\n")
+
+        if (epoch + 1) % 10 == 0:
+            W = model.fc.weight
+            np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
+            logger.info(f'Saving model weights at epoch {epoch+1}')
+
+            current_d = get_nneg_dims(W)
+            nneg_d_over_time.append((epoch+1, current_d))
             print("\n========================================================================================================")
-            print(f'====== Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
+            print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
             print("========================================================================================================\n")
-
-        if (epoch + 1) % 5 == 0:
-            if version == 'deterministic':
-                W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
-                np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
-                logger.info(f'Saving model weights at epoch {epoch+1}')
-
-                current_d = get_nneg_dims(W)
-
-                if plot_dims:
-                    nneg_d_over_time.append((epoch+1, current_d))
-                print("\n========================================================================================================")
-                print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
-                print("========================================================================================================\n")
-
-            #save model and optim parameters for inference or to resume training
-            #PyTorch convention is to save checkpoints as .tar files
-            if (multi_proc and n_gpus > 1):
-                if local_rank == 0:
-                    torch.save({
-                                'epoch': epoch,
-                                'model_state_dict': model.state_dict(),
-                                'optim_state_dict': optim.state_dict(),
-                                'loss': loss,
-                                'train_losses': train_losses,
-                                'train_accs': train_accs,
-                                'val_losses': val_losses,
-                                'val_accs': val_accs,
-                                'nneg_d_over_time': nneg_d_over_time,
-                                'loglikelihoods': loglikelihoods,
-                                'complexity_costs': complexity_losses,
-                                }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
-            else:
-                torch.save({
-                            'epoch': epoch,
-                            'model_state_dict': model.state_dict(),
-                            'optim_state_dict': optim.state_dict(),
-                            'loss': loss,
-                            'train_losses': train_losses,
-                            'train_accs': train_accs,
-                            'val_losses': val_losses,
-                            'val_accs': val_accs,
-                            'nneg_d_over_time': nneg_d_over_time,
-                            'loglikelihoods': loglikelihoods,
-                            'complexity_costs': complexity_losses,
-                            }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
-
-            logger.info(f'Saving model parameters at epoch {epoch+1}\n')
 
             if (epoch + 1) > window_size:
                 #check termination condition (we want to train until convergence)
                 lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
-                if (lmres.slope > 0) or (lmres.pvalue > pval_thres):
+                if (lmres.slope > 0) or (lmres.pvalue > .1):
                     break
 
     #save final model weights
-    save_weights_(version, results_dir, model.fc.weight)
+    save_weights_(results_dir, model.fc.weight)
     results = {'epoch': len(train_accs), 'train_acc': train_accs[-1], 'val_acc': val_accs[-1], 'val_loss': val_losses[-1]}
-    logger.info(f'\nOptimization finished after {epoch+1} epochs for lambda: {lmbda}\n')
+    logger.info(f'Optimization finished after {epoch+1} epochs for lambda: {lmbda}\n')
 
-    if (version == 'deterministic' and plot_dims):
-        logger.info(f'\nPlotting number of non-negative dimensions as a function of time for lambda: {lmbda}\n')
-        plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
+    logger.info(f'\nPlotting number of non-negative dimensions as a function of time for lambda: {lmbda}\n')
+    plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
 
     logger.info(f'\nPlotting model performances over time for lambda: {lmbda}')
-    #plot train and validation performance alongside each other to examine a potential overfit to the training data
     plot_single_performance(plots_dir=plots_dir, val_accs=val_accs, train_accs=train_accs)
     logger.info(f'\nPlotting losses over time for lambda: {lmbda}')
-    #plot both log-likelihood of the data (i.e., cross-entropy loss) and complexity loss (i.e., l1-norm in DSPoSE and KLD in VSPoSE)
+    #plot both log-likelihood of the data (i.e., cross-entropy loss) and complexity loss (i.e., lmbda x l1-norm)
     plot_complexities_and_loglikelihoods(plots_dir=plots_dir, loglikelihoods=loglikelihoods, complexity_losses=complexity_losses)
 
     PATH = os.path.join(results_dir, 'results.json')
@@ -375,54 +304,43 @@ def run(
         json.dump(results, results_file)
 
 if __name__ == "__main__":
-    #parse all arguments and set random seeds
+    #start parallelization (note that force must be set to true since there are other files in this project with __name__ == "__main__")
+    torch.multiprocessing.set_start_method('spawn', force=True)
+    #parse arguments and set random seeds
     args = parseargs()
     np.random.seed(args.rnd_seed)
     random.seed(args.rnd_seed)
     torch.manual_seed(args.rnd_seed)
 
-    n_gpus = torch.cuda.device_count()
-    multi_proc = args.multi_proc
-    if (multi_proc and n_gpus > 1):
-        global local_rank
-        local_rank = args.local_rank
-        device = torch.device(f'cuda:{local_rank}')
-        torch.cuda.set_device(local_rank)
+    if args.device == 'cuda':
         torch.cuda.manual_seed_all(args.rnd_seed)
-        torch.distributed.init_process_group(backend='nccl', init_method='env://')
-        #TODO: figure out whether line below is necessary for single-node multi-proc distributed training
-        #torch.distributed.barrier()
-        print(f'\nUsing {n_gpus} GPUs for multi-process distributed training.')
-        print(f'Local GPU rank in current process: {local_rank}')
-        print(f'PyTorch CUDA version: {torch.version.cuda}\n')
-    elif n_gpus == 1:
-        device = torch.device(args.device)
-        torch.cuda.manual_seed_all(args.rnd_seed)
+        n_gpus = torch.cuda.device_count()
         torch.backends.cudnn.benchmark = False
-        try:
-            torch.cuda.set_device(int(args.device[-1]))
-        except:
-            torch.cuda.set_device(1)
-        print(f'\nPyTorch CUDA version: {torch.version.cuda}\n')
+        print(f'\nUsing {n_gpus} GPUs for parallel training')
+        print(f'PyTorch CUDA version: {torch.version.cuda}\n')
+        n_procs = n_gpus
     else:
-        device = torch.device(args.device)
+        n_procs = args.n_models
+        print(f'\nUsing {n_procs} CPU cores for parallel training\n')
 
-    run(
-        version=args.version,
-        task=args.task,
-        rnd_seed=args.rnd_seed,
-        modality=args.modality,
-        results_dir=args.results_dir,
-        plots_dir=args.plots_dir,
-        triplets_dir=args.triplets_dir,
-        device=device,
-        batch_size=args.batch_size,
-        embed_dim=args.embed_dim,
-        epochs=args.epochs,
-        window_size=args.window_size,
-        sampling_method=args.sampling_method,
-        lmbda=args.lmbda,
-        lr=args.learning_rate,
-        p=args.p,
-        plot_dims=args.plot_dims,
-        )
+    torch.multiprocessing.spawn(
+        run,
+        args=(
+        args.task,
+        args.rnd_seed,
+        args.modality,
+        args.results_dir,
+        args.plots_dir,
+        args.triplets_dir,
+        args.device,
+        args.batch_size,
+        args.embed_dim,
+        args.epochs,
+        args.window_size,
+        args.sampling_method,
+        args.learning_rate,
+        args.p,
+        args.plot_dims,
+        ),
+        nprocs=n_procs,
+        join=True)
