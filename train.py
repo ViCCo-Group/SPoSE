@@ -113,8 +113,9 @@ def run(
         show_progress:bool=True,
 ):
     #initialise logger and start logging events
-    logger = setup_logging(file='spose_model_optimization.log')
+    logger = setup_logging(file='spose_model_optimization.log', dir=f'./log_files/model_{process_id}/')
     logger.setLevel(logging.INFO)
+
     #load triplets into memory
     train_triplets, test_triplets = load_data(device=device, triplets_dir=triplets_dir)
     n_items = get_nitems(train_triplets)
@@ -125,8 +126,6 @@ def run(
                                               n_items=n_items,
                                               batch_size=batch_size,
                                               sampling_method=sampling_method,
-                                              multi_proc=multi_proc,
-                                              n_gpus=n_gpus,
                                               rnd_seed=rnd_seed,
                                               p=p,
                                               )
@@ -225,7 +224,7 @@ def run(
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
             c_entropy = trinomial_loss(anchor, positive, negative, task, temperature)
             l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
-            W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
+            W = model.fc.weight
             pos_pen = torch.sum(F.relu(-W)) #positivity constraint to enforce non-negative values in embedding matrix
             complexity_loss = (lmbda/n_items) * l1_pen
             loss = c_entropy + 0.01 * pos_pen + complexity_loss
