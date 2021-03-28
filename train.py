@@ -78,12 +78,11 @@ def parseargs():
     return args
 
 def setup_logging(file:str, dir:str='./log_files/'):
-    #check whether directory exists
     if not os.path.exists(dir):
         os.makedirs(dir)
     #create logger at root level (no need to provide specific name, as our logger won't have children)
     logger = logging.getLogger()
-    logging.basicConfig(filename=dir + file, filemode='w', level=logging.DEBUG)
+    logging.basicConfig(filename=os.path.join(dir, file), filemode='w', level=logging.DEBUG)
     #add console handler to logger
     if len(logger.handlers) < 1:
         #create console handler and set level to debug (lowest severity level)
@@ -118,37 +117,33 @@ def run(
         show_progress:bool=True,
 ):
     #initialise logger and start logging events
-    logger = setup_logging(file='spose_model_optimization.log')
+    logger = setup_logging(file='spose_optimization.log', dir=f'./log_files/lmbda_{lmbda}/')
     logger.setLevel(logging.INFO)
     #load triplets into memory
-    train_triplets, test_triplets = load_data(device=device, triplets_dir=triplets_dir)
-    n_items = get_nitems(train_triplets)
+    train_triplets, test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir)
+    n_items = utils.get_nitems(train_triplets)
     #load train and test mini-batches
-    train_batches, val_batches = load_batches(
-                                              train_triplets=train_triplets,
-                                              test_triplets=test_triplets,
-                                              n_items=n_items,
-                                              batch_size=batch_size,
-                                              sampling_method=sampling_method,
-                                              multi_proc=multi_proc,
-                                              n_gpus=n_gpus,
-                                              rnd_seed=rnd_seed,
-                                              p=p,
-                                              )
+    train_batches, val_batches = utils.load_batches(
+                                                      train_triplets=train_triplets,
+                                                      test_triplets=test_triplets,
+                                                      n_items=n_items,
+                                                      batch_size=batch_size,
+                                                      sampling_method=sampling_method,
+                                                      multi_proc=multi_proc,
+                                                      n_gpus=n_gpus,
+                                                      rnd_seed=rnd_seed,
+                                                      p=p,
+                                                      )
     print(f'\nNumber of train batches in current process: {len(train_batches)}\n')
 
     ###############################
     ########## settings ###########
     ###############################
 
-    #cutoff for significance (checking if slope is significantly decreasing)
-    pval_thres = .1
-    #softmax temperature
     temperature = torch.tensor(1.).to(device)
-    #deterministic version of SPoSE
     model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
-    #move model to current device
     model.to(device)
+    optim = Adam(model.parameters(), lr=lr)
 
     ################################################
     ############# Creating PATHs ###################
@@ -178,20 +173,16 @@ def run(
                                                     device_ids=[local_rank],
                                                     output_device=local_rank,
                                                     )
-    #initialise optimizer
-    optim = Adam(model.parameters(), lr=lr)
 
     #####################################################################
     ######### Load model from previous checkpoint, if available #########
     #####################################################################
 
     if os.path.exists(model_dir):
-        models = [m for m in os.listdir(model_dir) if m.endswith('.tar')]
+        models = sorted([m.name for m in os.scandir(model_dir) if m.name.endswith('.tar')])
         if len(models) > 0:
             try:
-                checkpoints = list(map(get_digits, models))
-                last_checkpoint = np.argmax(checkpoints)
-                PATH = os.path.join(model_dir, models[last_checkpoint])
+                PATH = os.path.join(model_dir, models[-1])
                 #TODO: figure out whether line below is really necessary to load model's checkpoints for single-node multi-proc distrib training
                 #torch.distributed.barrier()
                 map_location = {f'cuda:0': f'cuda:{local_rank}'} if (multi_proc and n_gpus > 1) else device
@@ -248,9 +239,7 @@ def run(
             batch = batch.to(device)
             logits = model(batch)
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
-            #TODO: figure out why the line below is necessary if we don't use the variable probs anywhere else in the script
-            #probs = trinomial_probs(anchor, positive, negative, task)
-            c_entropy = trinomial_loss(anchor, positive, negative, task, temperature)
+            c_entropy = utils.trinomial_loss(anchor, positive, negative, task, temperature)
             l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
             W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
             pos_pen = torch.sum(F.relu(-W)) #positivity constraint to enforce non-negative values in embedding matrix
@@ -261,7 +250,7 @@ def run(
             batch_losses_train[i] += loss.item()
             batch_llikelihoods[i] += c_entropy.item()
             batch_closses[i] += complexity_loss.item()
-            batch_accs_train[i] += choice_accuracy(anchor, positive, negative, task)
+            batch_accs_train[i] += utils.choice_accuracy(anchor, positive, negative, task)
             iter += 1
 
         avg_llikelihood = torch.mean(batch_llikelihoods).item()
@@ -278,7 +267,7 @@ def run(
         ################ validation ####################
         ################################################
 
-        avg_val_loss, avg_val_acc = validation(
+        avg_val_loss, avg_val_acc = utils.validation(
                                                 model=model,
                                                 val_batches=val_batches,
                                                 version=version,
@@ -300,13 +289,13 @@ def run(
             print(f'====== Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
             print("========================================================================================================\n")
 
-        if (epoch + 1) % 5 == 0:
+        if (epoch + 1) % 10 == 0:
             if version == 'deterministic':
                 W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
                 np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
                 logger.info(f'Saving model weights at epoch {epoch+1}')
 
-                current_d = get_nneg_dims(W)
+                current_d = utils.get_nneg_dims(W)
 
                 if plot_dims:
                     nneg_d_over_time.append((epoch+1, current_d))
@@ -351,11 +340,11 @@ def run(
             if (epoch + 1) > window_size:
                 #check termination condition (we want to train until convergence)
                 lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
-                if (lmres.slope > 0) or (lmres.pvalue > pval_thres):
+                if (lmres.slope > 0) or (lmres.pvalue > .1):
                     break
 
     #save final model weights
-    save_weights_(version, results_dir, model.fc.weight)
+    utils.save_weights_(version, results_dir, model.fc.weight)
     results = {'epoch': len(train_accs), 'train_acc': train_accs[-1], 'val_acc': val_accs[-1], 'val_loss': val_losses[-1]}
     logger.info(f'\nOptimization finished after {epoch+1} epochs for lambda: {lmbda}\n')
 
