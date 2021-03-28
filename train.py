@@ -64,8 +64,6 @@ def parseargs():
     aa('--p', type=float, default=None,
         choices=[None, 0.5, 0.6, 0.7, 0.8, 0.9],
         help='this argument is only necessary for soft sampling. specifies the fraction of *train* to be sampled during an epoch')
-    aa('--plot_dims', action='store_true',
-        help='whether or not to plot the number of non-negative dimensions as a function of time after convergence')
     aa('--device', type=str, default='cpu',
         choices=['cpu', 'cuda', 'cuda:0', 'cuda:1'])
     aa('--multi_proc', action='store_true',
@@ -113,7 +111,6 @@ def run(
         lmbda:float,
         lr:float,
         p=None,
-        plot_dims:bool=True,
         show_progress:bool=True,
 ):
     #initialise logger and start logging events
@@ -297,8 +294,7 @@ def run(
 
                 current_d = utils.get_nneg_dims(W)
 
-                if plot_dims:
-                    nneg_d_over_time.append((epoch+1, current_d))
+                nneg_d_over_time.append((epoch+1, current_d))
                 print("\n========================================================================================================")
                 print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
                 print("========================================================================================================\n")
@@ -344,13 +340,12 @@ def run(
                     break
 
     #save final model weights
-    utils.save_weights_(version, results_dir, model.fc.weight)
+    utils.save_weights_(results_dir, model.fc.weight)
     results = {'epoch': len(train_accs), 'train_acc': train_accs[-1], 'val_acc': val_accs[-1], 'val_loss': val_losses[-1]}
     logger.info(f'\nOptimization finished after {epoch+1} epochs for lambda: {lmbda}\n')
 
-    if (version == 'deterministic' and plot_dims):
-        logger.info(f'\nPlotting number of non-negative dimensions as a function of time for lambda: {lmbda}\n')
-        plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
+    logger.info(f'\nPlotting number of non-negative dimensions as a function of time for lambda: {lmbda}\n')
+    plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
 
     logger.info(f'\nPlotting model performances over time for lambda: {lmbda}')
     #plot train and validation performance alongside each other to examine a potential overfit to the training data
@@ -413,5 +408,4 @@ if __name__ == "__main__":
         lmbda=args.lmbda,
         lr=args.learning_rate,
         p=args.p,
-        plot_dims=args.plot_dims,
         )
