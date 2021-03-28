@@ -51,4 +51,4 @@ For multi-node multi-process GPU training have a look [here](https://pytorch.org
 
 4. For a specified lambda value, you get a `.json` file where both the best test performance(s) and the corresponding epoch at `max` performance are stored. You find the file in the results folder.
 
-5. The number of non-negative dimensions (i.e., weights > 0.1) is plotted as a function of time after the model has converged. This is useful to qualitatively inspect changes in non-negative dimensions over training epochs. Again, plots can be found in `./plots/` after model convergence.
+5. The number of non-negative dimensions (i.e., weights > 0.1) gets plotted as a function of time after the model has converged. This is useful to qualitatively inspect changes in non-negative dimensions over training epochs. Again, plots can be found in `./plots/` after model convergence.
