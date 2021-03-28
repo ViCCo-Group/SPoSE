@@ -221,7 +221,7 @@ def run(
             logits = model(batch)
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
             c_entropy = utils.trinomial_loss(anchor, positive, negative, task, temperature)
-            l1_pen = utils.l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
+            l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
             W = model.fc.weight
             pos_pen = torch.sum(F.relu(-W)) #positivity constraint to enforce non-negative values in embedding matrix
             complexity_loss = (lmbda/n_items) * l1_pen
