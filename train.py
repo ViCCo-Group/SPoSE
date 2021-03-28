@@ -9,6 +9,7 @@ import random
 import re
 import torch
 import warnings
+import utils
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,7 +22,6 @@ from scipy.stats import linregress
 from torch.optim import Adam, AdamW
 
 from plotting import *
-from utils import *
 from models.model import *
 
 os.environ['PYTHONIOENCODING']='UTF-8'
