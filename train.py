@@ -276,6 +276,22 @@ def run(
             print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
             print("========================================================================================================\n")
 
+            torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': model.state_dict(),
+                        'optim_state_dict': optim.state_dict(),
+                        'loss': loss,
+                        'train_losses': train_losses,
+                        'train_accs': train_accs,
+                        'val_losses': val_losses,
+                        'val_accs': val_accs,
+                        'nneg_d_over_time': nneg_d_over_time,
+                        'loglikelihoods': loglikelihoods,
+                        'complexity_costs': complexity_losses,
+                        }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
+
+            logger.info(f'Saving model parameters at epoch {epoch+1}\n')
+
             if (epoch + 1) > window_size:
                 #check termination condition (we want to train until convergence)
                 lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
