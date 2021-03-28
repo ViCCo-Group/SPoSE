@@ -31,9 +31,6 @@ def parseargs():
     parser = argparse.ArgumentParser()
     def aa(*args, **kwargs):
         parser.add_argument(*args, **kwargs)
-    aa('--version', type=str, default='deterministic',
-        choices=['deterministic', 'variational'],
-        help='whether to apply a deterministic or variational version of SPoSE')
     aa('--task', type=str, default='odd_one_out',
         choices=['odd_one_out', 'similarity_task'])
     aa('--modality', type=str, default='behavioral/',
@@ -42,9 +39,9 @@ def parseargs():
     aa('--triplets_dir', type=str,
         help='directory from where to load triplets')
     aa('--results_dir', type=str, default='./results/',
-        help='optional specification of results directory (if not provided will resort to ./results/modality/version/lambda/rnd_seed/)')
+        help='optional specification of results directory (if not provided will resort to ./results/modality/lambda/rnd_seed/)')
     aa('--plots_dir', type=str, default='./plots/',
-        help='optional specification of directory for plots (if not provided will resort to ./plots/modality/version/lambda/rnd_seed/)')
+        help='optional specification of directory for plots (if not provided will resort to ./plots/modality/lambda/rnd_seed/)')
     aa('--learning_rate', type=float, default=0.001,
         help='learning rate to be used in optimizer')
     aa('--lmbda', type=float,
@@ -95,7 +92,6 @@ def setup_logging(file:str, dir:str='./log_files/'):
     return logger
 
 def run(
-        version:str,
         task:str,
         rnd_seed:int,
         modality:str,
@@ -149,12 +145,12 @@ def run(
     print(f'...Creating PATHs')
     print()
     if results_dir == './results/':
-        results_dir = os.path.join(results_dir, modality, version, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed:02d}')
+        results_dir = os.path.join(results_dir, modality, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed:02d}')
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
     if plots_dir == './plots/':
-        plots_dir = os.path.join(plots_dir, modality, version, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed}')
+        plots_dir = os.path.join(plots_dir, modality, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed}')
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
@@ -264,14 +260,8 @@ def run(
         ################ validation ####################
         ################################################
 
-        avg_val_loss, avg_val_acc = utils.validation(
-                                                model=model,
-                                                val_batches=val_batches,
-                                                version=version,
-                                                task=task,
-                                                device=device,
-                                                batch_size=batch_size,
-                                                )
+        avg_val_loss, avg_val_acc = utils.validation(model=model, val_batches=val_batches, task=task, device=device)
+
         val_losses.append(avg_val_loss)
         val_accs.append(avg_val_acc)
 
@@ -287,17 +277,16 @@ def run(
             print("========================================================================================================\n")
 
         if (epoch + 1) % 10 == 0:
-            if version == 'deterministic':
-                W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
-                np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
-                logger.info(f'Saving model weights at epoch {epoch+1}')
+            W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
+            np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
+            logger.info(f'Saving model weights at epoch {epoch+1}')
 
-                current_d = utils.get_nneg_dims(W)
+            current_d = utils.get_nneg_dims(W)
 
-                nneg_d_over_time.append((epoch+1, current_d))
-                print("\n========================================================================================================")
-                print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
-                print("========================================================================================================\n")
+            nneg_d_over_time.append((epoch+1, current_d))
+            print("\n========================================================================================================")
+            print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
+            print("========================================================================================================\n")
 
             #save model and optim parameters for inference or to resume training
             #PyTorch convention is to save checkpoints as .tar files
@@ -392,7 +381,6 @@ if __name__ == "__main__":
         device = torch.device(args.device)
 
     run(
-        version=args.version,
         task=args.task,
         rnd_seed=args.rnd_seed,
         modality=args.modality,

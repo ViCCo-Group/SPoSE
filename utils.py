@@ -397,29 +397,6 @@ def collect_choices(probas:np.ndarray, human_choices:np.ndarray, model_choices:d
 def logsumexp_(logits:torch.Tensor) -> torch.Tensor:
     return torch.exp(logits - torch.logsumexp(logits, dim=1)[..., None])
 
-def mc_sampling(model, batch:torch.Tensor, temperature:torch.Tensor, task:str, n_samples:int, device:torch.device) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    n_alternatives = 3 if task == 'odd_one_out' else 2
-    sampled_probas = torch.zeros(n_samples, batch.shape[0] // n_alternatives, n_alternatives).to(device)
-    sampled_choices = torch.zeros(n_samples, batch.shape[0] // n_alternatives).to(device)
-
-    for k in range(n_samples):
-        logits, _, _ = model(batch, device)
-        anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
-        similarities = compute_similarities(anchor, positive, negative, task)
-        soft_choices = softmax(similarities, temperature)
-        #stacked_sims = torch.stack(similarities, dim=-1)
-        #probas = F.softmax(logsumexp_(stacked_sims), dim=1)
-        probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
-
-        sampled_probas[k] += probas
-        sampled_choices[k] +=  soft_choices
-
-    probas = sampled_probas.mean(dim=0).cpu().numpy()
-    val_acc = accuracy_(probas)
-    soft_choices = sampled_choices.mean(dim=0)
-    val_loss = torch.mean(-torch.log(soft_choices))
-    return val_acc, val_loss, probas
-
 def test(
         model,
         test_batches,
@@ -463,12 +440,10 @@ def test(
 def validation(
                 model,
                 val_batches,
-                version:str,
                 task:str,
                 device:torch.device,
                 sampling:bool=False,
                 batch_size=None,
-                n_samples=None,
                 ):
     if sampling:
         assert isinstance(batch_size, int), 'batch size must be defined'
@@ -481,24 +456,19 @@ def validation(
         batch_accs_val = torch.zeros(len(val_batches))
         for j, batch in enumerate(val_batches):
             batch = batch.to(device)
+            logits = model(batch)
+            anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
 
-            if version == 'variational':
-                assert isinstance(n_samples, int), '\nOutput logits of variational neural networks have to be averaged over different samples.\n'
-                val_acc, val_loss, _ = mc_sampling(model, batch, temperature, task, n_samples, device)
+            if sampling:
+                similarities = compute_similarities(anchor, positive, negative, task)
+                probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).numpy()
+                probas = probas[:, ::-1]
+                human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
+                model_choices = np.array([np.random.choice(h_choice, size=len(p), replace=False, p=p)[::-1] for h_choice, p in zip(human_choices, probas)])
+                sampled_choices[j*batch_size:(j+1)*batch_size] += model_choices
             else:
-                logits = model(batch)
-                anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
-
-                if sampling:
-                    similarities = compute_similarities(anchor, positive, negative, task)
-                    probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).numpy()
-                    probas = probas[:, ::-1]
-                    human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
-                    model_choices = np.array([np.random.choice(h_choice, size=len(p), replace=False, p=p)[::-1] for h_choice, p in zip(human_choices, probas)])
-                    sampled_choices[j*batch_size:(j+1)*batch_size] += model_choices
-                else:
-                    val_loss = trinomial_loss(anchor, positive, negative, task, temperature)
-                    val_acc = choice_accuracy(anchor, positive, negative, task)
+                val_loss = trinomial_loss(anchor, positive, negative, task, temperature)
+                val_acc = choice_accuracy(anchor, positive, negative, task)
 
             batch_losses_val[j] += val_loss.item()
             batch_accs_val[j] += val_acc
