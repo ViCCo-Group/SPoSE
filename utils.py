@@ -107,9 +107,6 @@ def load_concepts(folder:str='./data') -> pd.DataFrame:
     concepts = pd.read_csv(pjoin(folder, 'category_mat_manual.tsv'), encoding='utf-8', sep='\t')
     return concepts
 
-def bootstrap_(triplets:np.ndarray) -> np.ndarray:
-    return triplets[np.random.choice(np.arange(len(triplets)), size=len(triplets), replace=True)]
-
 def load_data(device:torch.device, triplets_dir:str, inference:bool=False) -> Tuple[torch.Tensor]:
     """load train and test triplet datasets into memory"""
     if inference:
