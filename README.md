@@ -22,7 +22,6 @@
  --window_size (window size to be used for checking convergence criterion with linear regression)
  --sampling_method (sampling method; if soft, then you can specify a fraction of your training data to be sampled from during each epoch; else full train set will be used)
  --p (fraction of train set to sample)
- --plot_dims (whether or not to plot the number of non-negative dimensions as a function of time)
  --device (CPU or CUDA)
  --multi_proc (whether to perform single or multi node multi-process distributed training; only possible on GPU)
  --rnd_seed (random seed)
@@ -31,13 +30,13 @@
 Here is an example call for single-process training:
 
 ```
-python train.py --task odd_one_out --modality behavioral/ --triplets_dir ./triplets/behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 100 --batch_size 128 --epochs 500 --window_size 50 --sampling_method soft --p 0.7 --plot_dims --device cuda --rnd_seed 42
+python train.py --task odd_one_out --modality behavioral/ --triplets_dir ./triplets/behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 100 --batch_size 128 --epochs 500 --window_size 50 --sampling_method soft --p 0.7 --device cuda --rnd_seed 42
 ```
 
 Here is an example call for single-node multi-process GPU training:
 
 ```
-python -m torch.distributed.launch --nproc_per_node=NUM_GPUS_YOU_HAVE_ON_NODE main.py --task odd_one_out --modality behavioral/ --triplets_dir ./triplets/behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 90 --batch_size 128 --epochs 500 --window_size 30 --plot_dims --device cuda --multi_proc --rnd_seed 42
+python -m torch.distributed.launch --nproc_per_node=NUM_GPUS_YOU_HAVE_ON_NODE main.py --task odd_one_out --modality behavioral/ --triplets_dir ./triplets/behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 90 --batch_size 128 --epochs 500 --window_size 30 --device cuda --multi_proc --rnd_seed 42
 ```
 
 For multi-node multi-process GPU training have a look [here](https://pytorch.org/docs/stable/distributed.html). 
@@ -52,4 +51,4 @@ For multi-node multi-process GPU training have a look [here](https://pytorch.org
 
 4. For a specified lambda value, you get a `.json` file where both the best test performance(s) and the corresponding epoch at `max` performance are stored. You find the file in the results folder.
 
-5. With the `--plot_dims` flag (see above) you may tell the script to plot the number of non-negative dimensions (i.e., weights > 0.1) as a function of time after the model has converged. This is useful to qualitatively inspect changes in non-negative dimensions over training epochs. Again, plots can be found in `./plots/` after model convergence.
+5. The number of non-negative dimensions (i.e., weights > 0.1) is plotted as a function of time after the model has converged. This is useful to qualitatively inspect changes in non-negative dimensions over training epochs. Again, plots can be found in `./plots/` after model convergence.
