@@ -576,53 +576,12 @@ def prune_weights(model, version:str, indices:torch.Tensor, fraction:float):
             m.data = m.data[indices]
     return model
 
-def sort_weights(model, aggregate:bool) -> np.ndarray:
-    """sort latent dimensions according to their l1-norm in descending order"""
-    W = load_weights(model, version='deterministic').cpu()
-    l1_norms = W.norm(p=1, dim=0)
-    sorted_dims = torch.argsort(l1_norms, descending=True)
-    if aggregate:
-        l1_sorted = l1_norms[sorted_dims]
-        return sorted_dims, l1_sorted.numpy()
-    return sorted_dims, W[:, sorted_dims].numpy()
-
-def get_cut_off(klds:np.ndarray) -> int:
-    klds /= klds.max(axis=0)
-    cut_off = np.argmax([np.var(klds[i-1])-np.var(kld) for i, kld in enumerate(klds.T) if i > 0])
-    return cut_off
-
-def compute_kld(model, lmbda:float, aggregate:bool, reduction=None) -> np.ndarray:
-    mu_hat, b_hat = load_weights(model, version='variational')
-    mu = torch.zeros_like(mu_hat)
-    lmbda = torch.tensor(lmbda)
-    b = torch.ones_like(b_hat).mul(lmbda.pow(-1))
-    kld = kld_offline(mu_hat, b_hat, mu, b)
-    if aggregate:
-        assert isinstance(reduction, str), '\noperator to aggregate KL divergences must be defined\n'
-        if reduction == 'sum':
-            #use sum as to aggregate KLDs for each dimension
-            kld_sum = kld.sum(dim=0)
-            sorted_dims = torch.argsort(kld_sum, descending=True)
-            klds_sorted = kld_sum[sorted_dims].cpu().numpy()
-        else:
-            #use max to aggregate KLDs for each dimension
-            kld_max = kld.max(dim=0)[0]
-            sorted_dims = torch.argsort(kld_max, descending=True)
-            klds_sorted = kld_max[sorted_dims].cpu().numpy()
-    else:
-        #use mean KLD to sort dimensions in descending order (highest KLDs first)
-        sorted_dims = torch.argsort(kld.mean(dim=0), descending=True)
-        klds_sorted = kld[:, sorted_dims].cpu().numpy()
-    return sorted_dims, klds_sorted
-
 #############################################################################################
 ######### helper functions to load weight matrices and compare RSMs across modalities #######
 #############################################################################################
 
-def load_sparse_codes(PATH) -> np.ndarray:
-    Ws = [f for f in os.listdir(PATH) if f.endswith('.txt')]
-    max_epoch = np.argmax(list(map(get_digits, Ws)))
-    W = np.loadtxt(pjoin(PATH, Ws[max_epoch]))
+def load_sparse_codes(model_path:str) -> np.ndarray:
+    W = np.loadtxt(load_weights(model_path))
     W = remove_zeros(W)
     l1_norms = np.linalg.norm(W, ord=1, axis=1)
     sorted_dims = np.argsort(l1_norms)[::-1]
