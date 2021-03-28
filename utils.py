@@ -159,22 +159,23 @@ def load_concepts(folder:str='./data') -> pd.DataFrame:
 def bootstrap_(triplets:np.ndarray) -> np.ndarray:
     return triplets[np.random.choice(np.arange(len(triplets)), size=len(triplets), replace=True)]
 
-def load_data(device:torch.device, triplets_dir:str) -> Tuple[torch.Tensor, torch.Tensor]:
+def load_data(device:torch.device, triplets_dir:str, inference:bool=False) -> Tuple[torch.Tensor]:
     """load train and test triplet datasets into memory"""
+    if inference:
+        with open(pjoin(triplets_dir, 'test_triplets.npy'), 'rb') as test_triplets:
+            test_triplets = torch.from_numpy(np.load(test_triplets)).to(device).type(torch.LongTensor)
+            return test_triplets
     try:
-        with open(os.path.join(triplets_dir, 'train_90.npy'), 'rb') as train_f:
-            train_triplets = bootstrap_(np.load(train_f))
-            train_triplets = torch.from_numpy(train_triplets).to(device).type(torch.LongTensor)
-        with open(os.path.join(triplets_dir, 'test_10.npy'), 'rb') as test_f:
-            test_triplets = np.load(test_file)
-            test_triplets = torch.from_numpy(test_triplets).to(device).type(torch.LongTensor)
+        with open(pjoin(triplets_dir, 'train_90.npy'), 'rb') as train_file:
+            train_triplets = torch.from_numpy(np.load(train_file)).to(device).type(torch.LongTensor)
+
+        with open(pjoin(triplets_dir, 'test_10.npy'), 'rb') as test_file:
+            test_triplets = torch.from_numpy(np.load(test_file)).to(device).type(torch.LongTensor)
     except FileNotFoundError:
-        print('\n...Could not find any .npy files in current process.')
+        print('\n...Could not find any .npy files for current modality.')
         print('...Now searching for .txt files.\n')
-        train_triplets = bootstrap_(np.loadtxt(os.path.join(triplets_dir, 'train_90.txt')))
-        train_triplets = torch.from_numpy(train_triplets).to(device).type(torch.LongTensor)
-        test_triplets = np.loadtxt(os.path.join(triplets_dir, 'test_10.txt'))
-        test_triplets = torch.from_numpy(test_triplets).to(device).type(torch.LongTensor)
+        train_triplets = torch.from_numpy(np.loadtxt(pjoin(triplets_dir, 'train_90.txt'))).to(device).type(torch.LongTensor)
+        test_triplets = torch.from_numpy(np.loadtxt(pjoin(triplets_dir, 'test_10.txt'))).to(device).type(torch.LongTensor)
     return train_triplets, test_triplets
 
 def get_nitems(train_triplets:torch.Tensor) -> int:
