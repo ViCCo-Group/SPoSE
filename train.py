@@ -9,6 +9,7 @@ import random
 import re
 import torch
 import warnings
+import utils
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,7 +22,6 @@ from scipy.stats import linregress
 from torch.optim import Adam, AdamW
 
 from plotting import *
-from utils import *
 from models.model import *
 
 os.environ['PYTHONIOENCODING']='UTF-8'
@@ -113,22 +113,22 @@ def run(
         show_progress:bool=True,
 ):
     #initialise logger and start logging events
-    logger = setup_logging(file='spose_model_optimization.log', dir=f'./log_files/model_{process_id}/')
+    logger = setup_logging(file='spose_optimization.log', dir=f'./log_files/model_{process_id}/')
     logger.setLevel(logging.INFO)
 
     #load triplets into memory
-    train_triplets, test_triplets = load_data(device=device, triplets_dir=triplets_dir)
-    n_items = get_nitems(train_triplets)
+    train_triplets, test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir)
+    n_items = utils.get_nitems(train_triplets)
     #load train and test mini-batches
-    train_batches, val_batches = load_batches(
-                                              train_triplets=train_triplets,
-                                              test_triplets=test_triplets,
-                                              n_items=n_items,
-                                              batch_size=batch_size,
-                                              sampling_method=sampling_method,
-                                              rnd_seed=rnd_seed,
-                                              p=p,
-                                              )
+    train_batches, val_batches = utils.load_batches(
+                                                  train_triplets=train_triplets,
+                                                  test_triplets=test_triplets,
+                                                  n_items=n_items,
+                                                  batch_size=batch_size,
+                                                  sampling_method=sampling_method,
+                                                  rnd_seed=rnd_seed,
+                                                  p=p,
+                                                  )
     print(f'\nNumber of train batches in current process: {len(train_batches)}\n')
 
     ###############################
@@ -163,12 +163,10 @@ def run(
     #####################################################################
 
     if os.path.exists(model_dir):
-        models = [m for m in os.listdir(model_dir) if m.endswith('.tar')]
+        models = sorted([m.name for m in os.scandir(model_dir) if m.is_file() and m.name.endswith('.tar')])
         if len(models) > 0:
             try:
-                checkpoints = list(map(get_digits, models))
-                last_checkpoint = np.argmax(checkpoints)
-                PATH = pjoin(model_dir, models[last_checkpoint])
+                PATH = pjoin(model_dir, models[-1])
                 checkpoint = torch.load(PATH, map_location=device)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optim.load_state_dict(checkpoint['optim_state_dict'])
@@ -222,8 +220,8 @@ def run(
             batch = batch.to(device)
             logits = model(batch)
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
-            c_entropy = trinomial_loss(anchor, positive, negative, task, temperature)
-            l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
+            c_entropy = utils.trinomial_loss(anchor, positive, negative, task, temperature)
+            l1_pen = utils.l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
             W = model.fc.weight
             pos_pen = torch.sum(F.relu(-W)) #positivity constraint to enforce non-negative values in embedding matrix
             complexity_loss = (lmbda/n_items) * l1_pen
@@ -233,7 +231,7 @@ def run(
             batch_losses_train[i] += loss.item()
             batch_llikelihoods[i] += c_entropy.item()
             batch_closses[i] += complexity_loss.item()
-            batch_accs_train[i] += choice_accuracy(anchor, positive, negative, task)
+            batch_accs_train[i] += utils.choice_accuracy(anchor, positive, negative, task)
             iter += 1
 
         avg_llikelihood = torch.mean(batch_llikelihoods).item()
@@ -250,7 +248,7 @@ def run(
         ################ validation ####################
         ################################################
 
-        avg_val_loss, avg_val_acc = validation(model, val_batches, 'deterministic', task, device)
+        avg_val_loss, avg_val_acc = utils.validation(model, val_batches, 'deterministic', task, device)
 
         val_losses.append(avg_val_loss)
         val_accs.append(avg_val_acc)
@@ -272,7 +270,7 @@ def run(
             np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
             logger.info(f'Saving model weights at epoch {epoch+1}')
 
-            current_d = get_nneg_dims(W)
+            current_d = utils.get_nneg_dims(W)
             nneg_d_over_time.append((epoch+1, current_d))
             print("\n========================================================================================================")
             print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
@@ -285,7 +283,7 @@ def run(
                     break
 
     #save final model weights
-    save_weights_(results_dir, model.fc.weight)
+    utils.save_weights_(results_dir, model.fc.weight)
     results = {'epoch': len(train_accs), 'train_acc': train_accs[-1], 'val_acc': val_accs[-1], 'val_loss': val_losses[-1]}
     logger.info(f'Optimization finished after {epoch+1} epochs for lambda: {lmbda}\n')
 
