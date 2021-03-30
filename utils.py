@@ -352,7 +352,7 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
     probas = torch.zeros(int(len(test_batches) * batch_size), 3)
     temperature = torch.tensor(1.).to(device)
     model_choices = defaultdict(list)
-    W = torch.from_numpy(W)
+    W = torch.from_numpy(W).float()
     batch_accs = torch.zeros(len(test_batches))
     for j, batch in enumerate(test_batches):
         batch = batch.to(W.device)
@@ -498,7 +498,7 @@ def del_weights(path:str, weights:List[np.ndarray]) -> None:
         os.remove(pjoin(path, w))
 
 def load_weights(model_path:str) -> np.ndarray:
-    weights = sorted([w.name for w in os.scandir(model_path) if w.is_file() and w.name.endswith('txt')])
+    weights = sorted([w.name for w in os.scandir(model_path) if w.is_file() and w.name.startswith('sparse') and w.name.endswith('txt')])
     W = weights.pop()
     del_weights(model_path, weights)
     return W
