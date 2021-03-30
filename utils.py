@@ -488,7 +488,6 @@ def load_model(
 
 def save_weights_(out_path:str, W_mu:torch.tensor) -> None:
     W_mu = W_mu.detach().cpu().numpy()
-    W_mu = remove_zeros(W_mu)
     W_sorted = np.abs(W_mu[np.argsort(-np.linalg.norm(W_mu, ord=1, axis=1))]).T
     with open(pjoin(out_path, 'weights_sorted.npy'), 'wb') as f:
         np.save(f, W_sorted)

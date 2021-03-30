@@ -110,7 +110,7 @@ def run(
         lr:float,
         p=None,
         plot_dims:bool=True,
-        show_progress:bool=True,
+        verbose:bool=True,
 ):
     #load triplets into memory
     train_triplets, test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir)
@@ -260,7 +260,7 @@ def run(
         logger.info(f'Val acc: {avg_val_acc:.3f}')
         logger.info(f'Val loss: {avg_val_loss:.3f}\n')
 
-        if show_progress:
+        if verbose:
             print("\n==============================================================================================================")
             print(f'====== Process: {process_id} Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
             print("==============================================================================================================\n")
