@@ -112,10 +112,6 @@ def run(
         plot_dims:bool=True,
         show_progress:bool=True,
 ):
-    #initialise logger and start logging events
-    logger = setup_logging(file='spose_optimization.log', dir=f'./log_files/model_{process_id}/')
-    logger.setLevel(logging.INFO)
-
     #load triplets into memory
     train_triplets, test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir)
     n_items = utils.get_nitems(train_triplets)
@@ -157,6 +153,10 @@ def run(
         os.makedirs(plots_dir)
 
     model_dir = pjoin(results_dir, 'model')
+
+    #initialise logger and start logging events
+    logger = setup_logging(file='spose_optimization.log', dir=f'./log_files/{embed_dim}d/seed{rnd_seed:02}/{lmbda}')
+    logger.setLevel(logging.INFO)
 
     #####################################################################
     ######### Load model from previous checkpoint, if available #########
@@ -265,7 +265,7 @@ def run(
             print(f'====== Process: {process_id} Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
             print("==============================================================================================================\n")
 
-        if (epoch + 1) % 10 == 0:
+        if (epoch + 1) % 20 == 0:
             W = model.fc.weight
             np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
             logger.info(f'Saving model weights at epoch {epoch+1}')
@@ -292,11 +292,13 @@ def run(
 
             logger.info(f'Saving model parameters at epoch {epoch+1}\n')
 
+            """
             if (epoch + 1) > window_size:
                 #check termination condition (we want to train until convergence)
                 lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
                 if (lmres.slope > 0) or (lmres.pvalue > .1):
                     break
+            """
 
     #save final model weights
     utils.save_weights_(results_dir, model.fc.weight)
