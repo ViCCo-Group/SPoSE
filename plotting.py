@@ -417,7 +417,7 @@ def plot_pruning_results(
     plt.close()
 
 
-def plot_r2_scores(out_path:str, r2_scores:np.ndarray, nmf_components:list) -> None:
+def plot_r2_scores(out_path:str, r2_scores:np.ndarray, n_components:list) -> None:
     fig = plt.figure(figsize=(14, 8), dpi=150)
     ax = plt.subplot(111)
 
@@ -431,7 +431,7 @@ def plot_r2_scores(out_path:str, r2_scores:np.ndarray, nmf_components:list) -> N
 
     ax.plot(r2_scores)
     ax.set_xticks(range(len(r2_scores)))
-    ax.set_xticklabels(nmf_components, fontsize=12)
+    ax.set_xticklabels(n_components, fontsize=12)
     ax.set_xlabel('Latent dimensionality', fontsize=13)
     ax.set_ylabel(r'$r2$ score', fontsize=13)
     plt.tight_layout()
