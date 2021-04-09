@@ -465,23 +465,9 @@ def merge_dicts(files:list) -> dict:
     results = sort_results(results)
     return results
 
-def load_model(
-                model,
-                results_dir:str,
-                modality:str,
-                version:str,
-                data:str,
-                dim:int,
-                lmbda:float,
-                rnd_seed:int,
-                device:torch.device,
-                subfolder:str='model',
-):
-    model_path = pjoin(results_dir, modality, version, data, f'{dim}d', f'{lmbda}', f'seed{rnd_seed:02d}', subfolder)
-    models = os.listdir(model_path)
-    checkpoints = list(map(get_digits, models))
-    last_checkpoint = np.argmax(checkpoints)
-    PATH = pjoin(model_path, models[last_checkpoint])
+def load_model(model, model_path:str, device:torch.device):
+    models = sorted(os.listdir(model_path))
+    PATH = pjoin(model_path, models[-1])
     checkpoint = torch.load(PATH, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     return model
@@ -507,21 +493,11 @@ def load_final_weights(out_path:str) -> None:
         W = np.load(f)
     return W
 
-def prune_weights(model, version:str, indices:torch.Tensor, fraction:float):
-    indices = indices[:int(len(indices)*fraction)]
-    for n, m in model.named_parameters():
-        if version == 'variational':
-            if re.search(r'encoder', n):
-                #prune output weights and biases of encoder
-                m.data = m.data[indices]
-            else:
-                #only prune input weights of decoder
-                if re.search(r'weight', n):
-                    m.data = m.data[:, indices]
-        else:
-            #prune output weights of fc layer
-            m.data = m.data[indices]
-    return model
+def sort_weights(path:str) -> np.ndarray:
+    """sort latent dimensions according to their l1-norm in descending order"""
+    W = np.loadtxt(load_weights(path))
+    sorted_dims = np.argsort(-np.linalg.norm(W, axis=1))
+    return sorted_dims, W[sorted_dims]
 
 #############################################################################################
 ######### helper functions to load weight matrices and compare RSMs across modalities #######
