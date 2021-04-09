@@ -1,55 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__all__ = [
-            'BatchGenerator',
-            'TripletDataset',
-            'choice_accuracy',
-            'cross_entropy_loss',
-            'compute_kld',
-            'compare_modalities',
-            'corr_mat',
-            'compute_trils',
-            'cos_mat',
-            'cross_correlate_latent_dims',
-            'encode_as_onehot',
-            'fill_diag',
-            'get_cut_off',
-            'get_digits',
-            'get_nneg_dims',
-            'get_ref_indices',
-            'get_results_files',
-            'get_nitems',
-            'kld_online',
-            'kld_offline',
-            'load_batches',
-            'load_concepts',
-            'load_data',
-            'load_inds_and_item_names',
-            'load_model',
-            'load_sparse_codes',
-            'load_ref_images',
-            'load_targets',
-            'load_weights',
-            'l2_reg_',
-            'matmul',
-            'merge_dicts',
-            'pickle_file',
-            'unpickle_file',
-            'pearsonr',
-            'prune_weights',
-            'rsm',
-            'rsm_pred',
-            'save_weights_',
-            'sparsity',
-            'avg_sparsity',
-            'softmax',
-            'sort_weights',
-            'trinomial_loss',
-            'trinomial_probs',
-            'validation',
-        ]
-
 import json
 import logging
 import math
@@ -156,25 +107,23 @@ def load_concepts(folder:str='./data') -> pd.DataFrame:
     concepts = pd.read_csv(pjoin(folder, 'category_mat_manual.tsv'), encoding='utf-8', sep='\t')
     return concepts
 
-def bootstrap_(triplets:np.ndarray) -> np.ndarray:
-    return triplets[np.random.choice(np.arange(len(triplets)), size=len(triplets), replace=True)]
-
-def load_data(device:torch.device, triplets_dir:str) -> Tuple[torch.Tensor, torch.Tensor]:
+def load_data(device:torch.device, triplets_dir:str, inference:bool=False) -> Tuple[torch.Tensor]:
     """load train and test triplet datasets into memory"""
+    if inference:
+        with open(pjoin(triplets_dir, 'test_triplets.npy'), 'rb') as test_triplets:
+            test_triplets = torch.from_numpy(np.load(test_triplets)).to(device).type(torch.LongTensor)
+            return test_triplets
     try:
-        with open(os.path.join(triplets_dir, 'train_90.npy'), 'rb') as train_f:
-            train_triplets = bootstrap_(np.load(train_f))
-            train_triplets = torch.from_numpy(train_triplets).to(device).type(torch.LongTensor)
-        with open(os.path.join(triplets_dir, 'test_10.npy'), 'rb') as test_f:
-            test_triplets = np.load(test_file)
-            test_triplets = torch.from_numpy(test_triplets).to(device).type(torch.LongTensor)
+        with open(pjoin(triplets_dir, 'train_90.npy'), 'rb') as train_file:
+            train_triplets = torch.from_numpy(np.load(train_file)).to(device).type(torch.LongTensor)
+
+        with open(pjoin(triplets_dir, 'test_10.npy'), 'rb') as test_file:
+            test_triplets = torch.from_numpy(np.load(test_file)).to(device).type(torch.LongTensor)
     except FileNotFoundError:
-        print('\n...Could not find any .npy files in current process.')
+        print('\n...Could not find any .npy files for current modality.')
         print('...Now searching for .txt files.\n')
-        train_triplets = bootstrap_(np.loadtxt(os.path.join(triplets_dir, 'train_90.txt')))
-        train_triplets = torch.from_numpy(train_triplets).to(device).type(torch.LongTensor)
-        test_triplets = np.loadtxt(os.path.join(triplets_dir, 'test_10.txt'))
-        test_triplets = torch.from_numpy(test_triplets).to(device).type(torch.LongTensor)
+        train_triplets = torch.from_numpy(np.loadtxt(pjoin(triplets_dir, 'train_90.txt'))).to(device).type(torch.LongTensor)
+        test_triplets = torch.from_numpy(np.loadtxt(pjoin(triplets_dir, 'test_10.txt'))).to(device).type(torch.LongTensor)
     return train_triplets, test_triplets
 
 def get_nitems(train_triplets:torch.Tensor) -> int:
@@ -399,62 +348,26 @@ def collect_choices(probas:np.ndarray, human_choices:np.ndarray, model_choices:d
 def logsumexp_(logits:torch.Tensor) -> torch.Tensor:
     return torch.exp(logits - torch.logsumexp(logits, dim=1)[..., None])
 
-def mc_sampling(model, batch:torch.Tensor, temperature:torch.Tensor, task:str, n_samples:int, device:torch.device) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    n_alternatives = 3 if task == 'odd_one_out' else 2
-    sampled_probas = torch.zeros(n_samples, batch.shape[0] // n_alternatives, n_alternatives).to(device)
-    sampled_choices = torch.zeros(n_samples, batch.shape[0] // n_alternatives).to(device)
-
-    for k in range(n_samples):
-        logits, _, _ = model(batch, device)
-        anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
-        similarities = compute_similarities(anchor, positive, negative, task)
-        soft_choices = softmax(similarities, temperature)
-        #stacked_sims = torch.stack(similarities, dim=-1)
-        #probas = F.softmax(logsumexp_(stacked_sims), dim=1)
-        probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
-
-        sampled_probas[k] += probas
-        sampled_choices[k] +=  soft_choices
-
-    probas = sampled_probas.mean(dim=0).cpu().numpy()
-    val_acc = accuracy_(probas)
-    soft_choices = sampled_choices.mean(dim=0)
-    val_loss = torch.mean(-torch.log(soft_choices))
-    return val_acc, val_loss, probas
-
-def test(
-        model,
-        test_batches,
-        version:str,
-        task:str,
-        device:torch.device,
-        batch_size=None,
-        n_samples=None,
-) -> Tuple:
+def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, batch_size:int) -> Tuple[float, np.ndarray, dict]:
     probas = torch.zeros(int(len(test_batches) * batch_size), 3)
     temperature = torch.tensor(1.).to(device)
     model_choices = defaultdict(list)
-    model.eval()
-    with torch.no_grad():
-        batch_accs = torch.zeros(len(test_batches))
-        for j, batch in enumerate(test_batches):
-            batch = batch.to(device)
-            if version == 'variational':
-                assert isinstance(n_samples, int), '\nOutput logits of variational neural networks have to be averaged over different samples through mc sampling.\n'
-                test_acc, _, batch_probas = mc_sampling(model=model, batch=batch, temperature=temperature, task=task, n_samples=n_samples, device=device)
-            else:
-                logits = model(batch)
-                anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
-                similarities = compute_similarities(anchor, positive, negative, task)
-                #stacked_sims = torch.stack(similarities, dim=-1)
-                #batch_probas = F.softmax(logsumexp_(stacked_sims), dim=1)
-                batch_probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
-                test_acc = choice_accuracy(anchor, positive, negative, task)
+    W = torch.from_numpy(W).float()
+    batch_accs = torch.zeros(len(test_batches))
+    for j, batch in enumerate(test_batches):
+        batch = batch.to(W.device)
+        logits = batch @ W.T
+        anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
+        similarities = compute_similarities(anchor, positive, negative, task)
+        #stacked_sims = torch.stack(similarities, dim=-1)
+        #batch_probas = F.softmax(logsumexp_(stacked_sims), dim=1)
+        batch_probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
+        test_acc = choice_accuracy(anchor, positive, negative, task)
 
-            probas[j*batch_size:(j+1)*batch_size] += batch_probas
-            batch_accs[j] += test_acc
-            human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
-            model_choices = collect_choices(batch_probas, human_choices, model_choices)
+        probas[j*batch_size:(j+1)*batch_size] += batch_probas
+        batch_accs[j] += test_acc
+        human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
+        model_choices = collect_choices(batch_probas, human_choices, model_choices)
 
     probas = probas.cpu().numpy()
     probas = probas[np.where(probas.sum(axis=1) != 0.)]
@@ -552,117 +465,46 @@ def merge_dicts(files:list) -> dict:
     results = sort_results(results)
     return results
 
-def load_model(
-                model,
-                results_dir:str,
-                modality:str,
-                version:str,
-                data:str,
-                dim:int,
-                lmbda:float,
-                rnd_seed:int,
-                device:torch.device,
-                subfolder:str='model',
-):
-    model_path = pjoin(results_dir, modality, version, data, f'{dim}d', f'{lmbda}', f'seed{rnd_seed:02d}', subfolder)
-    models = os.listdir(model_path)
-    checkpoints = list(map(get_digits, models))
-    last_checkpoint = np.argmax(checkpoints)
-    PATH = pjoin(model_path, models[last_checkpoint])
+def load_model(model, model_path:str, device:torch.device):
+    models = sorted(os.listdir(model_path))
+    PATH = pjoin(model_path, models[-1])
     checkpoint = torch.load(PATH, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     return model
 
-def save_weights_(version:str, out_path:str, W_mu:torch.tensor, W_b:torch.tensor=None) -> None:
-    if version == 'variational':
-        with open(pjoin(out_path, 'weights_mu_sorted.npy'), 'wb') as f:
-            np.save(f, W_mu)
-        with open(pjoin(out_path, 'weights_b_sorted.npy'), 'wb') as f:
-            np.save(f, W_b)
-    else:
-        W_mu = W_mu.detach().cpu().numpy()
-        W_mu = remove_zeros(W_mu)
-        W_sorted = np.abs(W_mu[np.argsort(-np.linalg.norm(W_mu, ord=1, axis=1))]).T
-        with open(pjoin(out_path, 'weights_sorted.npy'), 'wb') as f:
-            np.save(f, W_sorted)
+def save_weights_(out_path:str, W_mu:torch.tensor) -> None:
+    W_mu = W_mu.detach().cpu().numpy()
+    W_sorted = np.abs(W_mu[np.argsort(-np.linalg.norm(W_mu, ord=1, axis=1))]).T
+    with open(pjoin(out_path, 'weights_sorted.npy'), 'wb') as f:
+        np.save(f, W_sorted)
 
-def load_weights(model, version:str) -> Tuple[torch.Tensor]:
-    if version == 'variational':
-        W_mu = model.encoder_mu[0].weight.data.T.detach()
-        if hasattr(model.encoder_mu[0].bias, 'data'):
-            W_mu += model.encoder_mu[0].bias.data.detach()
-        W_b = model.encoder_b[0].weight.data.T.detach()
-        if hasattr(model.encoder_b[0].bias, 'data'):
-            W_b += model.encoder_b[0].bias.data.detach()
-        W_mu = F.relu(W_mu)
-        W_b = F.softplus(W_b)
-        return W_mu, W_b
-    else:
-        return model.fc.weight.T.detach()
+def del_weights(path:str, weights:List[np.ndarray]) -> None:
+    for w in weights:
+        os.remove(pjoin(path, w))
 
-def prune_weights(model, version:str, indices:torch.Tensor, fraction:float):
-    indices = indices[:int(len(indices)*fraction)]
-    for n, m in model.named_parameters():
-        if version == 'variational':
-            if re.search(r'encoder', n):
-                #prune output weights and biases of encoder
-                m.data = m.data[indices]
-            else:
-                #only prune input weights of decoder
-                if re.search(r'weight', n):
-                    m.data = m.data[:, indices]
-        else:
-            #prune output weights of fc layer
-            m.data = m.data[indices]
-    return model
+def load_weights(model_path:str) -> np.ndarray:
+    weights = sorted([w.name for w in os.scandir(model_path) if w.is_file() and w.name.startswith('sparse') and w.name.endswith('txt')])
+    W = weights.pop()
+    del_weights(model_path, weights)
+    return W
 
-def sort_weights(model, aggregate:bool) -> np.ndarray:
+def load_final_weights(out_path:str) -> None:
+    with open(pjoin(out_path, 'weights_sorted.npy'), 'rb') as f:
+        W = np.load(f)
+    return W
+
+def sort_weights(path:str) -> np.ndarray:
     """sort latent dimensions according to their l1-norm in descending order"""
-    W = load_weights(model, version='deterministic').cpu()
-    l1_norms = W.norm(p=1, dim=0)
-    sorted_dims = torch.argsort(l1_norms, descending=True)
-    if aggregate:
-        l1_sorted = l1_norms[sorted_dims]
-        return sorted_dims, l1_sorted.numpy()
-    return sorted_dims, W[:, sorted_dims].numpy()
-
-def get_cut_off(klds:np.ndarray) -> int:
-    klds /= klds.max(axis=0)
-    cut_off = np.argmax([np.var(klds[i-1])-np.var(kld) for i, kld in enumerate(klds.T) if i > 0])
-    return cut_off
-
-def compute_kld(model, lmbda:float, aggregate:bool, reduction=None) -> np.ndarray:
-    mu_hat, b_hat = load_weights(model, version='variational')
-    mu = torch.zeros_like(mu_hat)
-    lmbda = torch.tensor(lmbda)
-    b = torch.ones_like(b_hat).mul(lmbda.pow(-1))
-    kld = kld_offline(mu_hat, b_hat, mu, b)
-    if aggregate:
-        assert isinstance(reduction, str), '\noperator to aggregate KL divergences must be defined\n'
-        if reduction == 'sum':
-            #use sum as to aggregate KLDs for each dimension
-            kld_sum = kld.sum(dim=0)
-            sorted_dims = torch.argsort(kld_sum, descending=True)
-            klds_sorted = kld_sum[sorted_dims].cpu().numpy()
-        else:
-            #use max to aggregate KLDs for each dimension
-            kld_max = kld.max(dim=0)[0]
-            sorted_dims = torch.argsort(kld_max, descending=True)
-            klds_sorted = kld_max[sorted_dims].cpu().numpy()
-    else:
-        #use mean KLD to sort dimensions in descending order (highest KLDs first)
-        sorted_dims = torch.argsort(kld.mean(dim=0), descending=True)
-        klds_sorted = kld[:, sorted_dims].cpu().numpy()
-    return sorted_dims, klds_sorted
+    W = np.loadtxt(load_weights(path))
+    sorted_dims = np.argsort(-np.linalg.norm(W, axis=1))
+    return sorted_dims, W[sorted_dims]
 
 #############################################################################################
 ######### helper functions to load weight matrices and compare RSMs across modalities #######
 #############################################################################################
 
-def load_sparse_codes(PATH) -> np.ndarray:
-    Ws = [f for f in os.listdir(PATH) if f.endswith('.txt')]
-    max_epoch = np.argmax(list(map(get_digits, Ws)))
-    W = np.loadtxt(pjoin(PATH, Ws[max_epoch]))
+def load_sparse_codes(model_path:str) -> np.ndarray:
+    W = np.loadtxt(load_weights(model_path))
     W = remove_zeros(W)
     l1_norms = np.linalg.norm(W, ord=1, axis=1)
     sorted_dims = np.argsort(l1_norms)[::-1]
