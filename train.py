@@ -26,6 +26,7 @@ from models.model import *
 
 os.environ['PYTHONIOENCODING']='UTF-8'
 os.environ['CUDA_LAUNCH_BLOCKING']=str(1)
+TASK_ID = os.environ['SLURM_ARRAY_TASK_ID']
 
 def parseargs():
     parser = argparse.ArgumentParser()
@@ -50,8 +51,6 @@ def parseargs():
         help='number of triplets in each mini-batch')
     aa('--epochs', metavar='T', type=int, default=500,
         help='maximum number of epochs to optimize SPoSE model for')
-    aa('--n_models', type=int, default=os.cpu_count()-1,
-        help='number of models to train in parallel (for CPU users: check number of cores; for GPU users: check number of GPUs at current node)')
     aa('--window_size', type=int, default=50,
         help='window size to be used for checking convergence criterion with linear regression')
     aa('--sampling_method', type=str, default='normal',
@@ -94,7 +93,6 @@ def get_lmbda_(idx:int) -> float:
     return lmbdas[idx]
 
 def run(
-        process_id:int,
         task:str,
         rnd_seed:int,
         modality:str,
@@ -131,7 +129,7 @@ def run(
     ########## settings ###########
     ###############################
 
-    lmbda = get_lmbda_(process_id)
+    lmbda = get_lmbda_(TASK_ID)
     temperature = torch.tensor(1.).to(device)
     model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
     model.to(device)
@@ -253,7 +251,7 @@ def run(
         val_losses.append(avg_val_loss)
         val_accs.append(avg_val_acc)
 
-        logger.info(f'Process: {process_id}')
+        logger.info(f'Process: {TASK_ID}')
         logger.info(f'Epoch: {epoch+1}/{epochs}')
         logger.info(f'Train acc: {avg_train_acc:.3f}')
         logger.info(f'Train loss: {avg_train_loss:.3f}')
@@ -262,7 +260,7 @@ def run(
 
         if verbose:
             print("\n==============================================================================================================")
-            print(f'====== Process: {process_id} Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
+            print(f'====== Process: {TASK_ID} Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
             print("==============================================================================================================\n")
 
         if (epoch + 1) % 20 == 0:
@@ -320,7 +318,7 @@ def run(
 
 if __name__ == "__main__":
     #start parallelization (note that force must be set to true since there are other files in this project with __name__ == "__main__")
-    torch.multiprocessing.set_start_method('spawn', force=True)
+    #torch.multiprocessing.set_start_method('spawn', force=True)
     #parse arguments and set random seeds
     args = parseargs()
     np.random.seed(args.rnd_seed)
@@ -334,13 +332,8 @@ if __name__ == "__main__":
         print(f'\nUsing {n_gpus} GPUs for parallel training')
         print(f'PyTorch CUDA version: {torch.version.cuda}\n')
         n_procs = n_gpus
-    else:
-        n_procs = args.n_models
-        print(f'\nUsing {n_procs} CPU cores for parallel training\n')
 
-    torch.multiprocessing.spawn(
-        run,
-        args=(
+    run(
         args.task,
         args.rnd_seed,
         args.modality,
@@ -355,7 +348,5 @@ if __name__ == "__main__":
         args.sampling_method,
         args.learning_rate,
         args.p,
-        args.plot_dims,
-        ),
-        nprocs=n_procs,
-        join=True)
+        args.plot_dims
+        )
