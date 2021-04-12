@@ -26,7 +26,7 @@ from models.model import *
 
 os.environ['PYTHONIOENCODING']='UTF-8'
 os.environ['CUDA_LAUNCH_BLOCKING']=str(1)
-TASK_ID = os.environ['SLURM_ARRAY_TASK_ID']
+TASK_ID = int(os.environ['SLURM_ARRAY_TASK_ID'])
 
 def parseargs():
     parser = argparse.ArgumentParser()
