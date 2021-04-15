@@ -6,6 +6,7 @@ import os
 import shutil
 import re
 import numpy as np
+from typing import List, Tuple
 
 def del_paths_(paths:List[str]) -> None:
     for path in paths:
