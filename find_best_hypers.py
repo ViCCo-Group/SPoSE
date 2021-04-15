@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import sys
+import json
 import os
-import shutil
 import re
+import shutil
+import sys
+
 import numpy as np
 from typing import List, Tuple
 
