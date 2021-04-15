@@ -25,7 +25,12 @@ def find_best_hypers_(PATH:str) -> Tuple[str, float]:
             if name.endswith('.json'):
                 paths.append(root)
                 with open(os.path.join(root, name), 'r') as f:
-                    results.append(json.load(f)['val_loss'])
+                    val_loss = json.load(f)['val_loss']
+                    if np.isnan(val_loss):
+                        print(f'Found NaN in cross-entropy loss for: {root}')
+                        results.append(np.inf)
+                        continue
+                    results.append(val_loss)
     argmin_loss = np.argmin(results)
     best_model = paths.pop(argmin_loss)
     print(f'Best params: {best_model}\n')
