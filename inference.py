@@ -133,7 +133,7 @@ def inference(
     cross_entropies = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='cross-entropy')
 
     np.savetxt(os.path.join(PATH, 'klds.txt'), klds)
-    np.savetxt(os.path.join(PATH, 'cross_entropies.txt'), klds)
+    np.savetxt(os.path.join(PATH, 'cross_entropies.txt'), cross_entropies)
 
     #print(np.mean(klds))
     #print(np.mean(cross_entropies))
