@@ -89,7 +89,7 @@ def setup_logging(file:str, dir:str='./log_files/'):
     return logger
 
 def get_lmbda_(idx:int) -> float:
-    lmbdas = np.arange(0.008, 0.01, 0.001)
+    lmbdas = np.arange(0.006, 0.03, 0.001)
     return lmbdas[idx]
 
 def run(
@@ -290,13 +290,11 @@ def run(
 
             logger.info(f'Saving model parameters at epoch {epoch+1}\n')
 
-            """
             if (epoch + 1) > window_size:
                 #check termination condition (we want to train until convergence)
                 lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
                 if (lmres.slope > 0) or (lmres.pvalue > .1):
                     break
-            """
 
     #save final model weights
     utils.save_weights_(results_dir, model.fc.weight)
