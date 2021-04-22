@@ -31,6 +31,8 @@ def find_best_hypers_(PATH:str) -> Tuple[str, float]:
                         results.append(np.inf)
                         continue
                     results.append(val_loss)
+    if sum(np.isinf(results)) == len(results):
+        raise Exception(f'Found NaN values in cross-entropy loss for every model. Change lambda value grid.')
     argmin_loss = np.argmin(results)
     best_model = paths.pop(argmin_loss)
     print(f'Best params: {best_model}\n')
