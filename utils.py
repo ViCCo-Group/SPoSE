@@ -320,7 +320,10 @@ def histogram(choices:list, behavior:bool=False) -> dict:
     return hist
 
 def compute_pmfs(choices:dict, behavior:bool) -> dict:
-    pmfs = {mat2py(t) if behavior else t: pmf(histogram(c, behavior)) for t, c in choices.items()}
+    if behavior:
+        pmfs = {mat2py(t): pmf(histogram(c, behavior)) for t, c in choices.items()}
+    else:
+        pmfs = {t: np.array(pmfs).mean(axis=0) for t, pmfs in choices.items()}
     return pmfs
 
 def get_choice_distributions(test_set:pd.DataFrame) -> dict:
