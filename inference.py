@@ -135,8 +135,8 @@ def inference(
     np.savetxt(os.path.join(PATH, 'klds.txt'), klds)
     np.savetxt(os.path.join(PATH, 'cross_entropies.txt'), cross_entropies)
 
-    #print(np.mean(klds))
-    #print(np.mean(cross_entropies))
+    print(np.mean(klds))
+    print(np.mean(cross_entropies))
 
 if __name__ == '__main__':
     args = parseargs()
