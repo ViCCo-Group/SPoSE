@@ -89,7 +89,7 @@ def setup_logging(file:str, dir:str='./log_files/'):
     return logger
 
 def get_lmbda_(idx:int) -> float:
-    lmbdas = np.arange(0.008, 0.01, 0.0001)
+    lambdas = np.arange(0.005, 0.04, 0.001)
     return lmbdas[idx]
 
 def run(
