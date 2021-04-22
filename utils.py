@@ -342,7 +342,8 @@ def collect_choices(probas:np.ndarray, human_choices:np.ndarray, model_choices:d
     probas = probas.flip(dims=[1])
     for pmf, choices in zip(probas, human_choices):
         sorted_choices = tuple(np.sort(choices))
-        model_choices[sorted_choices].append(np.argmax(pmf[np.argsort(choices)]))
+        model_choices[sorted_choices].append(pmf[np.argsort(choices)].numpy().tolist())
+        #model_choices[sorted_choices].append(np.argmax(pmf[np.argsort(choices)]))
     return model_choices
 
 def logsumexp_(logits:torch.Tensor) -> torch.Tensor:
@@ -371,7 +372,8 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
 
     probas = probas.cpu().numpy()
     probas = probas[np.where(probas.sum(axis=1) != 0.)]
-    model_pmfs = compute_pmfs(model_choices, behavior=False)
+    model_pmfs = {triplet: np.array(choices).mean(axis=0) for triplet, choices in model_choices.items()}
+    #model_pmfs = compute_pmfs(model_choices, behavior=False)
     test_acc = batch_accs.mean().item()
     return test_acc, probas, model_pmfs
 
