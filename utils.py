@@ -20,7 +20,7 @@ from itertools import combinations, permutations
 from numba import njit, jit, prange
 from os.path import join as pjoin
 from skimage.transform import resize
-from torch.optim import Adam, AdamW
+from torch.optim import Adam
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import Dataset, DataLoader, SequentialSampler
 from typing import Tuple, Iterator, List, Dict
@@ -167,12 +167,6 @@ def load_batches(
         val_batches = BatchGenerator(I=I, dataset=test_triplets, batch_size=batch_size, sampling_method=None, p=None)
     return train_batches, val_batches
 
-def l2_reg_(model, weight_decay:float=1e-5) -> torch.Tensor:
-    loc_norms_squared = .5 * (model.encoder_mu[0].weight.pow(2).sum() + model.encoder_mu[0].bias.pow(2).sum())
-    scale_norms_squared = (model.encoder_b[0].weight.pow(2).sum() +  model.encoder_mu[0].bias.pow(2).sum())
-    l2_reg = weight_decay * (loc_norms_squared + scale_norms_squared)
-    return l2_reg
-
 def encode_as_onehot(I:torch.Tensor, triplets:torch.Tensor) -> torch.Tensor:
     """encode item triplets as one-hot-vectors"""
     return I[triplets.flatten(), :]
@@ -209,12 +203,6 @@ def trinomial_probs(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.T
 def trinomial_loss(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str, t:torch.Tensor) -> torch.Tensor:
     sims = compute_similarities(anchor, positive, negative, method)
     return cross_entropy_loss(sims, t)
-
-def kld_online(mu_1:torch.Tensor, l_1:torch.Tensor, mu_2:torch.Tensor, l_2:torch.Tensor) -> torch.Tensor:
-    return torch.mean(torch.log(l_1/l_2) + (l_2/l_1) * torch.exp(-l_1 * torch.abs(mu_1-mu_2)) + l_2*torch.abs(mu_1-mu_2) - 1)
-
-def kld_offline(mu_1:torch.Tensor, b_1:torch.Tensor, mu_2:torch.Tensor, b_2:torch.Tensor) -> torch.Tensor:
-    return torch.log(b_2/b_1) + (b_1/b_2) * torch.exp(-torch.abs(mu_1-mu_2)/b_1) + torch.abs(mu_1-mu_2)/b_2 - 1
 
 def get_nneg_dims(W:torch.Tensor, eps:float=0.1) -> int:
     w_max = W.max(dim=1)[0]
@@ -313,14 +301,17 @@ def pmf(hist:dict) -> np.ndarray:
     values = np.array(list(hist.values()))
     return values/np.sum(values)
 
-def histogram(choices:list, behavior:bool=False) -> dict:
-    hist = {i+1 if behavior else i: 0 for i in range(3)}
+def histogram(choices:list) -> Dict[int, int]:
+    hist = {i+1: 0 for i in range(3)}
     for choice in choices:
-        hist[choice if behavior else choice.item()] += 1
+        hist[choice] += 1
     return hist
 
-def compute_pmfs(choices:dict, behavior:bool) -> dict:
-    pmfs = {mat2py(t) if behavior else t: pmf(histogram(c, behavior)) for t, c in choices.items()}
+def compute_pmfs(choices:dict, behavior:bool) -> Dict[Tuple[int, int, int], np.ndarray]:
+    if behavior:
+        pmfs = {mat2py(t): pmf(histogram(c)) for t, c in choices.items()}
+    else:
+        pmfs = {t: np.array(pmfs).mean(axis=0) for t, pmfs in choices.items()}
     return pmfs
 
 def get_choice_distributions(test_set:pd.DataFrame) -> dict:
@@ -343,11 +334,7 @@ def collect_choices(probas:np.ndarray, human_choices:np.ndarray, model_choices:d
     for pmf, choices in zip(probas, human_choices):
         sorted_choices = tuple(np.sort(choices))
         model_choices[sorted_choices].append(pmf[np.argsort(choices)].numpy().tolist())
-        #model_choices[sorted_choices].append(np.argmax(pmf[np.argsort(choices)]))
     return model_choices
-
-def logsumexp_(logits:torch.Tensor) -> torch.Tensor:
-    return torch.exp(logits - torch.logsumexp(logits, dim=1)[..., None])
 
 def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, batch_size:int) -> Tuple[float, np.ndarray, dict]:
     probas = torch.zeros(int(len(test_batches) * batch_size), 3)
@@ -360,8 +347,6 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
         logits = batch @ W.T
         anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
         similarities = compute_similarities(anchor, positive, negative, task)
-        #stacked_sims = torch.stack(similarities, dim=-1)
-        #batch_probas = F.softmax(logsumexp_(stacked_sims), dim=1)
         batch_probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
         test_acc = choice_accuracy(anchor, positive, negative, task)
 
@@ -372,8 +357,7 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
 
     probas = probas.cpu().numpy()
     probas = probas[np.where(probas.sum(axis=1) != 0.)]
-    model_pmfs = {triplet: np.array(choices).mean(axis=0) for triplet, choices in model_choices.items()}
-    #model_pmfs = compute_pmfs(model_choices, behavior=False)
+    model_pmfs = compute_pmfs(model_choices, behavior=False)
     test_acc = batch_accs.mean().item()
     return test_acc, probas, model_pmfs
 
@@ -398,24 +382,19 @@ def validation(
         batch_accs_val = torch.zeros(len(val_batches))
         for j, batch in enumerate(val_batches):
             batch = batch.to(device)
+            logits = model(batch)
+            anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
 
-            if version == 'variational':
-                assert isinstance(n_samples, int), '\nOutput logits of variational neural networks have to be averaged over different samples.\n'
-                val_acc, val_loss, _ = mc_sampling(model, batch, temperature, task, n_samples, device)
+            if sampling:
+                similarities = compute_similarities(anchor, positive, negative, task)
+                probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).numpy()
+                probas = probas[:, ::-1]
+                human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
+                model_choices = np.array([np.random.choice(h_choice, size=len(p), replace=False, p=p)[::-1] for h_choice, p in zip(human_choices, probas)])
+                sampled_choices[j*batch_size:(j+1)*batch_size] += model_choices
             else:
-                logits = model(batch)
-                anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
-
-                if sampling:
-                    similarities = compute_similarities(anchor, positive, negative, task)
-                    probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).numpy()
-                    probas = probas[:, ::-1]
-                    human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
-                    model_choices = np.array([np.random.choice(h_choice, size=len(p), replace=False, p=p)[::-1] for h_choice, p in zip(human_choices, probas)])
-                    sampled_choices[j*batch_size:(j+1)*batch_size] += model_choices
-                else:
-                    val_loss = trinomial_loss(anchor, positive, negative, task, temperature)
-                    val_acc = choice_accuracy(anchor, positive, negative, task)
+                val_loss = trinomial_loss(anchor, positive, negative, task, temperature)
+                val_acc = choice_accuracy(anchor, positive, negative, task)
 
             batch_losses_val[j] += val_loss.item()
             batch_accs_val[j] += val_acc
@@ -426,18 +405,6 @@ def validation(
     avg_val_loss = torch.mean(batch_losses_val).item()
     avg_val_acc = torch.mean(batch_accs_val).item()
     return avg_val_loss, avg_val_acc
-
-def get_digits(string:str) -> int:
-    c = ""
-    nonzero = False
-    for i in string:
-        if i.isdigit():
-            if (int(i) == 0) and (not nonzero):
-                continue
-            else:
-                c += i
-                nonzero = True
-    return int(c)
 
 def get_results_files(
                       results_dir:str,
