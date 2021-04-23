@@ -143,13 +143,13 @@ def run(
 
     print(f'\n...Creating PATHs.\n')
     if results_dir == './results/':
-        subsample = triplets_dir.split('/')[-2]
+        subsample = triplets_dir.split('/')[-1]
         results_dir = pjoin(results_dir, modality, subsample, 'deterministic', f'{embed_dim}d', f'seed{rnd_seed:02d}', str(lmbda))
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
     if plots_dir == './plots/':
-        subsample = triplets_dir.split('/')[-2]
+        subsample = triplets_dir.split('/')[-1]
         plots_dir = pjoin(plots_dir, modality, subsample, 'deterministic', f'{embed_dim}d', f'seed{rnd_seed:02d}', str(lmbda))
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
