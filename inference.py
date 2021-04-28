@@ -72,6 +72,7 @@ def compute_divergences(human_pmfs:dict, model_pmfs:dict, alpha:float, metric:st
 def inference(
              modality:str,
              task:str,
+             n_items:int,
              dim:int,
              batch_size:int,
              results_dir:str,
@@ -84,7 +85,7 @@ def inference(
     PATH = os.path.join(results_dir, modality, 'deterministic', f'{dim}d')
     model_paths = get_model_paths(PATH)
     test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir, inference=True)
-    test_batches = utils.load_batches(train_triplets=None, test_triplets=test_triplets, n_items=1854, batch_size=batch_size, inference=True)
+    test_batches = utils.load_batches(train_triplets=None, test_triplets=test_triplets, n_items=n_items, batch_size=batch_size, inference=True)
     print(f'\nNumber of test batches in current process: {len(test_batches)}\n')
 
     test_accs = dict()
@@ -145,6 +146,7 @@ if __name__ == '__main__':
     inference(
               modality=args.modality,
               task=args.task,
+              n_items=args.n_items,
               dim=args.dim,
               batch_size=args.batch_size,
               results_dir=args.results_dir,
