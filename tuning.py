@@ -27,8 +27,8 @@ def parseargs():
         help='number of unique items/objects in dataset')
     aa('--dim', type=int, default=100,
         help='latent dimensionality of VSPoSE embedding matrices')
-    aa('--e_temps', type=float, nargs='+',
-        help='temperature values for scaling the embeddings')
+    aa('--temperatures', type=float, nargs='+',
+        help='fp values for temperature scaling')
     aa('--batch_size', metavar='B', type=int, default=128,
         help='number of triplets in each mini-batch')
     aa('--results_dir', type=str,
@@ -57,7 +57,7 @@ def inference(
              task:str,
              n_items:int,
              dim:int,
-             e_temps:List[float],
+             temperatures:List[float],
              batch_size:int,
              results_dir:str,
              triplets_dir:str,
@@ -66,7 +66,7 @@ def inference(
 
     PATH = os.path.join(results_dir, modality, 'deterministic', f'{dim}d')
     model_paths = get_model_paths(PATH)
-    e_temp = e_temps[process_id]
+    temperature = temperatures[process_id]
     _, test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir, inference=False)
     test_batches = utils.load_batches(train_triplets=None, test_triplets=test_triplets, n_items=n_items, batch_size=batch_size, inference=True)
     print(f'\nNumber of test batches in current process: {len(test_batches)}\n')
@@ -81,7 +81,7 @@ def inference(
         except FileNotFoundError:
             raise Exception(f'\nCannot find weight matrices in: {model_path}\n')
 
-        val_acc, val_loss, probas, _ = utils.test(W=W, test_batches=test_batches, task=task, batch_size=batch_size, device=device, e_temp=e_temp)
+        val_acc, val_loss, probas, _ = utils.test(W=W, test_batches=test_batches, task=task, batch_size=batch_size, device=device, temperature=temperature)
         val_centropies[seed] = val_loss
         val_accs[seed] = val_acc
 
@@ -100,7 +100,7 @@ def inference(
     print(f'Median accuracy on validation set: {median_val_acc}')
     print(f'Max accuracy on validation set: {max_val_acc}\n')
 
-    PATH = os.path.join(PATH, 'evaluation_metrics', 'validation', f'{e_temp:.2f}')
+    PATH = os.path.join(PATH, 'evaluation_metrics', 'validation', f'{temperature:.2f}')
     if not os.path.exists(PATH):
         os.makedirs(PATH)
 
@@ -109,7 +109,7 @@ def inference(
 
 if __name__ == '__main__':
     args = parseargs()
-    n_procs = len(args.e_temps)
+    n_procs = len(args.temperatures)
     torch.multiprocessing.set_start_method('spawn', force=True)
 
     if re.search(r'^cuda', args.device):
@@ -134,7 +134,7 @@ if __name__ == '__main__':
                                 args.task,
                                 args.n_items,
                                 args.dim,
-                                args.e_temps,
+                                args.temperatures,
                                 args.batch_size,
                                 args.results_dir,
                                 args.triplets_dir,

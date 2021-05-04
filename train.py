@@ -20,12 +20,14 @@ from os.path import join as pjoin
 from collections import defaultdict
 from scipy.stats import linregress
 from torch.optim import Adam, AdamW
+from typing import List, Tuple
 
 from plotting import *
 from models.model import *
 
 os.environ['PYTHONIOENCODING']='UTF-8'
 os.environ['CUDA_LAUNCH_BLOCKING']=str(1)
+os.environ['OMP_NUM_THREADS']=str(1)
 TASK_ID = int(os.environ['SLURM_ARRAY_TASK_ID'])
 
 def parseargs():
@@ -42,6 +44,8 @@ def parseargs():
         help='optional specification of results directory (if not provided will resort to ./results/modality/lambda/rnd_seed/)')
     aa('--plots_dir', type=str, default='./plots/',
         help='optional specification of directory for plots (if not provided will resort to ./plots/modality/lambda/rnd_seed/)')
+    aa('--lambdas', type=float, nargs='+',
+        help='lambda value grid')
     aa('--learning_rate', type=float, default=0.001,
         help='learning rate to be used in optimizer')
     aa('--embed_dim', metavar='D', type=int, default=90,
@@ -88,10 +92,6 @@ def setup_logging(file:str, dir:str='./log_files/'):
         logger.addHandler(handler)
     return logger
 
-def get_lmbda_(idx:int) -> float:
-    lmbdas = np.arange(0.006, 0.03, 0.001)
-    return lmbdas[idx]
-
 def run(
         task:str,
         rnd_seed:int,
@@ -99,6 +99,7 @@ def run(
         results_dir:str,
         plots_dir:str,
         triplets_dir:str,
+        lambdas:List[float],
         device:torch.device,
         batch_size:int,
         embed_dim:int,
@@ -129,7 +130,7 @@ def run(
     ########## settings ###########
     ###############################
 
-    lmbda = get_lmbda_(TASK_ID)
+    lmbda = lambdas[TASK_ID]
     temperature = torch.tensor(1.).to(device)
     model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
     model.to(device)
@@ -338,6 +339,7 @@ if __name__ == "__main__":
         args.results_dir,
         args.plots_dir,
         args.triplets_dir,
+        args.lambdas,
         args.device,
         args.batch_size,
         args.embed_dim,

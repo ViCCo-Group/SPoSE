@@ -21,6 +21,8 @@ def parseargs():
         help='current modality (e.g., behavioral, synthetic)')
     aa('--task', type=str,
         choices=['odd_one_out', 'similarity_task'])
+    aa('--n_items', type=int, default=1854,
+        help='number of unique items/objects in dataset')
     aa('--dim', type=int, default=100,
         help='latent dimensionality of SPoSE embedding matrices')
     aa('--batch_size', metavar='B', type=int, default=128,
@@ -97,7 +99,7 @@ def inference(
         except FileNotFoundError:
             raise Exception(f'\nCannot find weight matrices in: {model_path}\n')
 
-        test_acc, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
+        test_acc, _, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
 
         print(f'Test accuracy for current random seed: {test_acc}')
 

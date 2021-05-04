@@ -336,9 +336,8 @@ def collect_choices(probas:np.ndarray, human_choices:np.ndarray, model_choices:d
         model_choices[sorted_choices].append(pmf[np.argsort(choices)].numpy().tolist())
     return model_choices
 
-def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, batch_size:int, e_temp:float=None) -> Tuple[float, np.ndarray, dict]:
+def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, batch_size:int, temperature:float=1.0) -> Tuple[float, np.ndarray, dict]:
     probas = torch.zeros(int(len(test_batches) * batch_size), 3)
-    temperature = torch.tensor(1.).to(device)
     model_choices = defaultdict(list)
     W = torch.from_numpy(W).float()
     batch_accs = torch.zeros(len(test_batches))
@@ -348,8 +347,6 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
         logits = batch @ W.T
         anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
         similarities = compute_similarities(anchor, positive, negative, task)
-        if e_temp:
-            similarities = tuple(s/e_temp for s in similarities)
         batch_probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
         test_acc = choice_accuracy(anchor, positive, negative, task)
         test_loss = cross_entropy_loss(similarities, temperature)
