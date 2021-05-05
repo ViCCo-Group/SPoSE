@@ -21,18 +21,18 @@ module load pytorch/cpu/1.7.0
 export OMP_NUM_THREADS=1
 
 TASK='odd_one_out'
-MODALITY='behavioral/'
-TR_DIR='./triplets/behavioral/'
+MODALITY='behavioral'
+TR_DIR='./triplets/behavioral/split_03'
 LR="0.001"
 DIM=100
-T=1000
+T=500
 BS=128
-WS=900
+WS=400
 DEVICE='cpu'
 RND_SEEDS=(0 1 2 3 4 5 6 7 8 9 10 21 22 23 24 25 26 27 29 42) 
 
-echo "Started SPoSE $DIM optimization at $(date)"
+echo "Started SPoSE $SLURM_ARRAY_TASK_ID optimization at $(date)"
 
 srun python3 ./train.py --task $TASK --modality $MODALITY --triplets_dir $TR_DIR --learning_rate $LR --embed_dim $DIM --batch_size $BS --epochs $T --n_models $SLURM_CPUS_PER_TASK --window_size $WS --plot_dims --device $DEVICE --rnd_seed ${RND_SEEDS[$SLURM_ARRAY_TASK_ID]}  >> spose_behavioral_parallel.out
 
-echo "Finished SPoSE $DIM optimization at $(date)"
+echo "Finished SPoSE $SLURM_ARRAY_TASK_ID optimization at $(date)"
