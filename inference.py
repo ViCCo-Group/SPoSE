@@ -33,7 +33,7 @@ def parseargs():
         help='directory from where to load triplets data')
     aa('--human_pmfs_dir', type=str, default=None,
         help='directory from where to load human choice probability distributions')
-    aa('--alpha', type=float,
+    aa('--alpha', type=float, default=0,
         help='alpha value for Laplace smoothing')
     args = parser.parse_args()
     return args
@@ -125,15 +125,15 @@ def inference(
     utils.pickle_file(test_accs, PATH, 'test_accuracies')
 
     assert type(human_pmfs_dir) == str, 'Directory from where to load human choice probability distributions must be provided'
-    test_accs = dict(sorted(test_accs.items(), key=lambda kv:kv[1]))
+    test_accs = dict(sorted(test_accs.items(), key=lambda kv:kv[1], reverse=True))
     #NOTE: we leverage the model that is slightly better than the median model (since we have 20 random seeds, the median is the average between model 10 and 11)
-    median_model = list(test_accs.keys())[len(test_accs)//2]
+    best_model = list(test_accs.keys())[0]
 
     human_pmfs = utils.unpickle_file(human_pmfs_dir, 'human_choice_pmfs')
-    median_model_pmfs = model_pmfs_all[median_model]
+    best_model_pmfs = model_pmfs_all[best_model]
 
-    klds = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='kld')
-    cross_entropies = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='cross-entropy')
+    klds = compute_divergences(human_pmfs, best_model_pmfs, alpha, metric='kld')
+    cross_entropies = compute_divergences(human_pmfs, best_model_pmfs, alpha, metric='cross-entropy')
 
     np.savetxt(os.path.join(PATH, 'klds.txt'), klds)
     np.savetxt(os.path.join(PATH, 'cross_entropies.txt'), cross_entropies)
