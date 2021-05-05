@@ -21,6 +21,8 @@ def parseargs():
         help='current modality (e.g., behavioral, synthetic)')
     aa('--task', type=str,
         choices=['odd_one_out', 'similarity_task'])
+    aa('--n_items', type=int, default=1854,
+        help='number of unique items/objects in dataset')
     aa('--dim', type=int, default=100,
         help='latent dimensionality of SPoSE embedding matrices')
     aa('--batch_size', metavar='B', type=int, default=128,
@@ -31,7 +33,7 @@ def parseargs():
         help='directory from where to load triplets data')
     aa('--human_pmfs_dir', type=str, default=None,
         help='directory from where to load human choice probability distributions')
-    aa('--alpha', type=float,
+    aa('--alpha', type=float, default=0,
         help='alpha value for Laplace smoothing')
     args = parser.parse_args()
     return args
@@ -72,6 +74,7 @@ def compute_divergences(human_pmfs:dict, model_pmfs:dict, alpha:float, metric:st
 def inference(
              modality:str,
              task:str,
+             n_items:int,
              dim:int,
              batch_size:int,
              results_dir:str,
@@ -84,7 +87,7 @@ def inference(
     PATH = os.path.join(results_dir, modality, 'deterministic', f'{dim}d')
     model_paths = get_model_paths(PATH)
     test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir, inference=True)
-    test_batches = utils.load_batches(train_triplets=None, test_triplets=test_triplets, n_items=1854, batch_size=batch_size, inference=True)
+    test_batches = utils.load_batches(train_triplets=None, test_triplets=test_triplets, n_items=n_items, batch_size=batch_size, inference=True)
     print(f'\nNumber of test batches in current process: {len(test_batches)}\n')
 
     test_accs = dict()
@@ -96,7 +99,7 @@ def inference(
         except FileNotFoundError:
             raise Exception(f'\nCannot find weight matrices in: {model_path}\n')
 
-        test_acc, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
+        test_acc, _, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
 
         print(f'Test accuracy for current random seed: {test_acc}')
 
@@ -122,15 +125,15 @@ def inference(
     utils.pickle_file(test_accs, PATH, 'test_accuracies')
 
     assert type(human_pmfs_dir) == str, 'Directory from where to load human choice probability distributions must be provided'
-    test_accs = dict(sorted(test_accs.items(), key=lambda kv:kv[1]))
+    test_accs = dict(sorted(test_accs.items(), key=lambda kv:kv[1], reverse=True))
     #NOTE: we leverage the model that is slightly better than the median model (since we have 20 random seeds, the median is the average between model 10 and 11)
-    median_model = list(test_accs.keys())[len(test_accs)//2]
+    best_model = list(test_accs.keys())[0]
 
     human_pmfs = utils.unpickle_file(human_pmfs_dir, 'human_choice_pmfs')
-    median_model_pmfs = model_pmfs_all[median_model]
+    best_model_pmfs = model_pmfs_all[best_model]
 
-    klds = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='kld')
-    cross_entropies = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='cross-entropy')
+    klds = compute_divergences(human_pmfs, best_model_pmfs, alpha, metric='kld')
+    cross_entropies = compute_divergences(human_pmfs, best_model_pmfs, alpha, metric='cross-entropy')
 
     np.savetxt(os.path.join(PATH, 'klds.txt'), klds)
     np.savetxt(os.path.join(PATH, 'cross_entropies.txt'), cross_entropies)
@@ -145,6 +148,7 @@ if __name__ == '__main__':
     inference(
               modality=args.modality,
               task=args.task,
+              n_items=args.n_items,
               dim=args.dim,
               batch_size=args.batch_size,
               results_dir=args.results_dir,
