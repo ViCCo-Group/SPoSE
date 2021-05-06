@@ -25,11 +25,11 @@ TASK='odd_one_out'
 MODALITY='behavioral'
 LR="0.001"
 DIM=100
-T=500
+T=1000
 BS=128
 WS=400
 DEVICE='cpu'
-TR_DIRS=("./triplets/behavioral/split_01" "./triplets/behavioral/split_02" "./triplets/behavioral/split_03" "./triplets/behavioral/split_04" "./triplets/behavioral/split_05" "./triplets/behavioral/split_06" "./triplets/behavioral/split_07" "./triplets/behavioral/split_08" "./triplets/behavioral/split_09" "./triplets/behavioral/split_10")
+TR_DIRS=("./triplets/behavioral/10/split_01" "./triplets/behavioral/10/split_02" "./triplets/behavioral/10/split_03" "./triplets/behavioral/10/split_04" "./triplets/behavioral/10/split_05" "./triplets/behavioral/10/split_06" "./triplets/behavioral/10/split_07" "./triplets/behavioral/10/split_08" "./triplets/behavioral/10/split_09" "./triplets/behavioral/10/split_10")
 RND_SEED=42
 
 echo "Started SPoSE $SLURM_ARRAY_TASK_ID optimization at $(date)"
