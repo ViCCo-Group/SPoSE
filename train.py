@@ -25,7 +25,8 @@ from plotting import *
 from models.model import *
 
 os.environ['PYTHONIOENCODING']='UTF-8'
-os.environ['CUDA_LAUNCH_BLOCKING']=str(1)
+os.environ['CUDA_LAUNCH_BLOCKING']='1'
+os.environ['OMP_NUM_THREADS']='1'
 
 def parseargs():
     parser = argparse.ArgumentParser()
@@ -141,16 +142,25 @@ def run(
     ############# Creating PATHs ###################
     ################################################
 
+    triplets_dir_split = triplets_dir.split('/')
     print(f'\n...Creating PATHs.\n')
     if results_dir == './results/':
-        subsample = triplets_dir.split('/')[-1]
-        results_dir = pjoin(results_dir, modality, subsample, 'deterministic', f'{embed_dim}d', f'seed{rnd_seed:02d}', str(lmbda))
+        if len(triplets_dir_split) > 3:
+            fraction = triplets_dir_split[-2]
+            subsample = triplets_dir_split[-1]
+            results_dir = pjoin(results_dir, modality, fraction, subsample, 'deterministic', f'{embed_dim}d', f'seed{rnd_seed:02d}', str(lmbda))
+        else:
+            results_dir = pjoin(results_dir, modality, 'deterministic', f'{embed_dim}d', f'seed{rnd_seed:02d}', str(lmbda))
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
     if plots_dir == './plots/':
-        subsample = triplets_dir.split('/')[-1]
-        plots_dir = pjoin(plots_dir, modality, subsample, 'deterministic', f'{embed_dim}d', f'seed{rnd_seed:02d}', str(lmbda))
+        if len(triplets_dir_split) > 3:
+            fraction = triplets_dir_split[-2]
+            subsample = triplets_dir_split[-1]
+            plots_dir = pjoin(plots_dir, modality, fraction, subsample, 'deterministic', f'{embed_dim}d', f'seed{rnd_seed:02d}', str(lmbda))
+        else:
+            plots_dir = pjoin(plots_dir, modality, 'deterministic', f'{embed_dim}d', f'seed{rnd_seed:02d}', str(lmbda))
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
