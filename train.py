@@ -301,6 +301,10 @@ def run(
                         }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
 
             logger.info(f'Saving model parameters at epoch {epoch+1}\n')
+            results = {'epoch': len(train_accs), 'train_acc': train_accs[-1], 'val_acc': val_accs[-1], 'val_loss': val_losses[-1]}
+            PATH = pjoin(results_dir, f'results.json')
+            with open(PATH, 'w') as results_file:
+                json.dump(results, results_file)
 
             """
             if (epoch + 1) > window_size:
@@ -312,9 +316,7 @@ def run(
 
     #save final model weights
     utils.save_weights_(results_dir, model.fc.weight)
-    results = {'epoch': len(train_accs), 'train_acc': train_accs[-1], 'val_acc': val_accs[-1], 'val_loss': val_losses[-1]}
     logger.info(f'Optimization finished after {epoch+1} epochs for lambda: {lmbda}\n')
-
     logger.info(f'\nPlotting number of non-negative dimensions as a function of time for lambda: {lmbda}\n')
     plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
 
@@ -323,10 +325,6 @@ def run(
     logger.info(f'\nPlotting losses over time for lambda: {lmbda}')
     #plot both log-likelihood of the data (i.e., cross-entropy loss) and complexity loss (i.e., lmbda x l1-norm)
     plot_complexities_and_loglikelihoods(plots_dir=plots_dir, loglikelihoods=loglikelihoods, complexity_losses=complexity_losses)
-
-    PATH = os.path.join(results_dir, 'results.json')
-    with open(PATH, 'w') as results_file:
-        json.dump(results, results_file)
 
 if __name__ == "__main__":
     #start parallelization (note that force must be set to true since there are other files in this project with __name__ == "__main__")
