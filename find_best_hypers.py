@@ -18,6 +18,12 @@ def del_paths_(paths:List[str]) -> None:
         plots_path = '/'.join(plots_path)
         shutil.rmtree(plots_path)
 
+def keep_final_epoch_(PATH:str) -> None:
+    models = sorted([os.path.join(root, name) for root, _, files in os.walk(PATH) for name in files if name.endswith('.tar')])
+    _ = models.pop()
+    for model in models:
+        os.remove(model)
+
 def find_best_hypers_(PATH:str) -> Tuple[str, float]:
     paths, results = [], []
     for root, _, files in os.walk(PATH):
@@ -37,6 +43,7 @@ def find_best_hypers_(PATH:str) -> Tuple[str, float]:
     best_model = paths.pop(argmin_loss)
     print(f'Best params: {best_model}\n')
     del_paths_(paths)
+    keep_final_epoch_(best_model)
 
 if __name__ == '__main__':
     PATH = sys.argv[1]
