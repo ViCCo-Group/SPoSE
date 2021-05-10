@@ -19,14 +19,15 @@ import torch.nn.functional as F
 from os.path import join as pjoin
 from collections import defaultdict
 from scipy.stats import linregress
-from torch.optim import Adam, AdamW
+from torch.optim import Adam
+from typing import List, Tuple
 
 from plotting import *
 from models.model import *
 
 os.environ['PYTHONIOENCODING']='UTF-8'
 os.environ['CUDA_LAUNCH_BLOCKING']='1'
-os.environ['OMP_NUM_THREADS']='1'
+os.environ['OMP_NUM_THREADS']='1' #number of cores used per Python process (set to 2 if HT is enabled, else keep 1)
 
 def parseargs():
     parser = argparse.ArgumentParser()
@@ -51,8 +52,8 @@ def parseargs():
         help='number of triplets in each mini-batch')
     aa('--epochs', metavar='T', type=int, default=500,
         help='maximum number of epochs to optimize SPoSE model for')
-    aa('--n_models', type=int, default=os.cpu_count()-1,
-        help='number of models to train in parallel (for CPU users: check number of cores; for GPU users: check number of GPUs at current node)')
+    aa('--lambdas', type=float, nargs='+',
+        help='list of lambda values used for l1 regularization (note that number of lambdas determines the number of initialized Python processes)')
     aa('--window_size', type=int, default=50,
         help='window size to be used for checking convergence criterion with linear regression')
     aa('--sampling_method', type=str, default='normal',
@@ -64,7 +65,7 @@ def parseargs():
     aa('--plot_dims', action='store_true',
         help='whether or not to plot the number of non-negative dimensions as a function of time after convergence')
     aa('--device', type=str, default='cpu',
-        choices=['cpu', 'cuda', 'cuda:0', 'cuda:1'])
+        choices=['cpu', 'cuda', 'cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7'])
     aa('--rnd_seed', type=int, default=42,
         help='random seed for reproducibility')
     args = parser.parse_args()
@@ -90,12 +91,9 @@ def setup_logging(file:str, dir:str='./log_files/'):
         logger.addHandler(handler)
     return logger
 
-def get_lmbda_(idx:int) -> float:
-    lmbdas = np.arange(0.008, 0.01, 0.0001)
-    return lmbdas[idx]
-
 def run(
         process_id:int,
+        lambdas:List[float],
         task:str,
         rnd_seed:int,
         modality:str,
@@ -132,7 +130,7 @@ def run(
     ########## settings ###########
     ###############################
 
-    lmbda = get_lmbda_(process_id)
+    lmbda = lambdas[process_id]
     temperature = torch.tensor(1.).to(device)
     model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
     model.to(device)
@@ -333,27 +331,39 @@ def run(
 if __name__ == "__main__":
     #start parallelization (note that force must be set to true since there are other files in this project with __name__ == "__main__")
     torch.multiprocessing.set_start_method('spawn', force=True)
-    #parse arguments and set random seeds
     args = parseargs()
     np.random.seed(args.rnd_seed)
     random.seed(args.rnd_seed)
     torch.manual_seed(args.rnd_seed)
+    n_subprocs = len(args.lambdas)
 
-    if args.device == 'cuda':
+    if re.search(r'^cuda', args.device):
         torch.cuda.manual_seed_all(args.rnd_seed)
         n_gpus = torch.cuda.device_count()
         torch.backends.cudnn.benchmark = False
-        print(f'\nUsing {n_gpus} GPUs for parallel training')
+        print(f'\nInitializing {n_subprocs} GPU processes for parallel training')
+        try:
+            current_device = int(args.device[-1])
+        except ValueError:
+            current_device = 1
+        try:
+            torch.cuda.set_device(current_device)
+            print(f'All processes submitted to CUDA device: {current_device}')
+        except RuntimeError:
+            torch.cuda.set_device(0)
+            print(f'All processes submitted to CUDA device: {0}')
         print(f'PyTorch CUDA version: {torch.version.cuda}\n')
-        n_procs = n_gpus
     else:
-        n_procs = args.n_models
-        print(f'\nUsing {n_procs} CPU cores for parallel training\n')
+        if n_subprocs > os.cpu_count()-1:
+            raise Exception('Number of initialized processes exceeds the number of available CPU cores.')
+        print(f'\nUsing {n_subprocs} CPU cores for parallel training\n')
+    device = torch.device(args.device)
 
     torch.multiprocessing.spawn(
         run,
         args=(
         args.task,
+        args.lambdas,
         args.rnd_seed,
         args.modality,
         args.results_dir,
@@ -369,5 +379,5 @@ if __name__ == "__main__":
         args.p,
         args.plot_dims,
         ),
-        nprocs=n_procs,
+        nprocs=n_subprocs,
         join=True)
