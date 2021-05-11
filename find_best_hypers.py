@@ -16,7 +16,10 @@ def del_paths_(paths:List[str]) -> None:
         plots_path = path.split('/')
         plots_path[1] = 'plots'
         plots_path = '/'.join(plots_path)
-        shutil.rmtree(plots_path)
+        try:
+            shutil.rmtree(plots_path)
+        except FileNotFoundError:
+            continue
 
 def keep_final_epoch_(PATH:str) -> None:
     models = sorted([os.path.join(root, name) for root, _, files in os.walk(PATH) for name in files if name.endswith('.tar')])
