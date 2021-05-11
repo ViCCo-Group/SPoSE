@@ -61,13 +61,21 @@ def cross_entropy_(p:np.ndarray, q:np.ndarray, alpha:float) -> float:
 def kld_(p:np.ndarray, q:np.ndarray, alpha:float) -> float:
     return entropy_(p) + cross_entropy_(p, q, alpha)
 
+def l1_distance(p:np.ndarray, q:np.ndarray) -> float:
+    return np.linalg.norm(p - q, ord=1)
+
 def compute_divergences(human_pmfs:dict, model_pmfs:dict, alpha:float, metric:str='kld'):
     assert len(human_pmfs) == len(model_pmfs), '\nNumber of triplets in human and model distributions must correspond.\n'
     divergences = np.zeros(len(model_pmfs))
     accuracy = 0
     for i, (triplet, p) in enumerate(human_pmfs.items()):
         q = np.asarray(model_pmfs[triplet])
-        div = kld_(p, q, alpha) if metric  == 'kld' else cross_entropy_(p, q, alpha)
+        if metric  == 'kld':
+            div = kld_(p, q, alpha)
+        elif metric == 'cross-entropy':
+            div = cross_entropy_(p, q, alpha)
+        else:
+            div = l1_distance(p, q)
         divergences[i] += div
     return divergences
 
@@ -91,6 +99,7 @@ def inference(
     print(f'\nNumber of test batches in current process: {len(test_batches)}\n')
 
     test_accs = dict()
+    test_losses = dict()
     model_pmfs_all = defaultdict(dict)
 
     for model_path in model_paths:
@@ -99,12 +108,13 @@ def inference(
         except FileNotFoundError:
             raise Exception(f'\nCannot find weight matrices in: {model_path}\n')
 
-        test_acc, _, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
+        test_acc, test_loss, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
 
         print(f'Test accuracy for current random seed: {test_acc}')
 
         seed = model_path.split('/')[-2]
         test_accs[seed] = test_acc
+        test_losses[seed] = test_loss
         model_pmfs_all[seed] = model_pmfs
 
         with open(os.path.join(model_path, 'test_probas.npy'), 'wb') as f:
@@ -121,25 +131,29 @@ def inference(
     if not os.path.exists(PATH):
         os.makedirs(PATH)
 
-    utils.pickle_file(model_pmfs_all, PATH, 'model_choice_pmfs')
-    utils.pickle_file(test_accs, PATH, 'test_accuracies')
-
     assert type(human_pmfs_dir) == str, 'Directory from where to load human choice probability distributions must be provided'
     test_accs = dict(sorted(test_accs.items(), key=lambda kv:kv[1], reverse=True))
     #NOTE: we leverage the model that is slightly better than the median model (since we have 20 random seeds, the median is the average between model 10 and 11)
-    best_model = list(test_accs.keys())[0]
+    median_model = list(test_accs.keys())[len(test_accs)//2]
+
+    utils.pickle_file(model_pmfs_all[median_model], PATH, 'model_choice_pmfs')
+    utils.pickle_file(test_accs[median_model], PATH, 'test_accuracies')
+    utils.pickle_file(test_losses[median_model], PATH, 'test_losses')
 
     human_pmfs = utils.unpickle_file(human_pmfs_dir, 'human_choice_pmfs')
-    best_model_pmfs = model_pmfs_all[best_model]
+    median_model_pmfs = model_pmfs_all[median_model]
 
-    klds = compute_divergences(human_pmfs, best_model_pmfs, alpha, metric='kld')
-    cross_entropies = compute_divergences(human_pmfs, best_model_pmfs, alpha, metric='cross-entropy')
+    klds = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='kld')
+    cross_entropies = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='cross-entropy')
+    l1_distances = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='l1-distance')
 
     np.savetxt(os.path.join(PATH, 'klds.txt'), klds)
     np.savetxt(os.path.join(PATH, 'cross_entropies.txt'), cross_entropies)
+    np.savetxt(os.path.join(PATH, 'l1_distances.txt'), l1_distances)
 
     print(np.mean(klds))
     print(np.mean(cross_entropies))
+    print(np.mean(l1_distances))
 
 if __name__ == '__main__':
     args = parseargs()
