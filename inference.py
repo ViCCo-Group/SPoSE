@@ -17,8 +17,6 @@ def parseargs():
     parser = argparse.ArgumentParser()
     def aa(*args, **kwargs):
         parser.add_argument(*args, **kwargs)
-    aa('--modality', type=str,
-        help='current modality (e.g., behavioral, synthetic)')
     aa('--task', type=str,
         choices=['odd_one_out', 'similarity_task'])
     aa('--n_items', type=int, default=1854,
@@ -80,7 +78,6 @@ def compute_divergences(human_pmfs:dict, model_pmfs:dict, alpha:float, metric:st
     return divergences
 
 def inference(
-             modality:str,
              task:str,
              n_items:int,
              dim:int,
@@ -92,7 +89,7 @@ def inference(
              device:torch.device,
              ) -> None:
 
-    PATH = os.path.join(results_dir, modality, 'deterministic', f'{dim}d')
+    PATH = os.path.join(results_dir, 'deterministic', f'{dim}d')
     model_paths = get_model_paths(PATH)
     test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir, inference=True)
     test_batches = utils.load_batches(train_triplets=None, test_triplets=test_triplets, n_items=n_items, batch_size=batch_size, inference=True)
@@ -108,6 +105,7 @@ def inference(
         except FileNotFoundError:
             raise Exception(f'\nCannot find weight matrices in: {model_path}\n')
 
+        W = utils.remove_zeros(W)
         test_acc, test_loss, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
 
         print(f'Test accuracy for current random seed: {test_acc}')
@@ -133,8 +131,9 @@ def inference(
 
     assert type(human_pmfs_dir) == str, 'Directory from where to load human choice probability distributions must be provided'
     test_accs = dict(sorted(test_accs.items(), key=lambda kv:kv[1], reverse=True))
+    test_losses = dict(sorted(test_losses.items(), key=lambda kv:kv[1], reverse=True))
     #NOTE: we leverage the model that is slightly better than the median model (since we have 20 random seeds, the median is the average between model 10 and 11)
-    median_model = list(test_accs.keys())[len(test_accs)//2]
+    median_model = list(test_accs.keys())[len(test_losses)//2]
 
     utils.pickle_file(model_pmfs_all[median_model], PATH, 'model_choice_pmfs')
     utils.pickle_file(test_accs[median_model], PATH, 'test_accuracies')
@@ -160,7 +159,6 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     inference(
-              modality=args.modality,
               task=args.task,
               n_items=args.n_items,
               dim=args.dim,

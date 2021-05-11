@@ -342,6 +342,7 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
     model_choices = defaultdict(list)
     W = torch.from_numpy(W).float()
     batch_accs = torch.zeros(len(test_batches))
+    batch_losses = torch.zeros(len(test_batches))
     for j, batch in enumerate(test_batches):
         batch = batch.to(W.device)
         logits = batch @ W.T
@@ -349,9 +350,10 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
         similarities = compute_similarities(anchor, positive, negative, task)
         batch_probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
         test_acc = choice_accuracy(anchor, positive, negative, task)
-
+        test_loss = trinomial_loss(anchor, positive, negative, task, temperature)
         probas[j*batch_size:(j+1)*batch_size] += batch_probas
         batch_accs[j] += test_acc
+        batch_losses[j] += test_loss
         human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
         model_choices = collect_choices(batch_probas, human_choices, model_choices)
 
@@ -359,7 +361,8 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
     probas = probas[np.where(probas.sum(axis=1) != 0.)]
     model_pmfs = compute_pmfs(model_choices, behavior=False)
     test_acc = batch_accs.mean().item()
-    return test_acc, probas, model_pmfs
+    test_loss = batch_losses.mean().item()
+    return test_acc, test_loss, probas, model_pmfs
 
 def validation(
                 model,
