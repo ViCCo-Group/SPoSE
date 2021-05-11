@@ -129,7 +129,6 @@ def run(
     ###############################
     ########## settings ###########
     ###############################
-
     lmbda = lambdas[process_id]
     temperature = torch.tensor(1.).to(device)
     model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
@@ -360,8 +359,8 @@ if __name__ == "__main__":
     torch.multiprocessing.spawn(
         run,
         args=(
-        args.task,
         args.lambdas,
+        args.task,
         args.rnd_seed,
         args.modality,
         args.results_dir,
