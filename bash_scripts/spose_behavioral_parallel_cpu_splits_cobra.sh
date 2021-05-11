@@ -29,13 +29,14 @@ LR="0.001"
 DIM=100
 T=1000
 BS=128
-WS=400
+WS=900
 DEVICE='cpu'
 TR_DIRS=("./triplets/behavioral/10/split_01" "./triplets/behavioral/10/split_02" "./triplets/behavioral/10/split_03" "./triplets/behavioral/10/split_04" "./triplets/behavioral/10/split_05" "./triplets/behavioral/10/split_06" "./triplets/behavioral/10/split_07" "./triplets/behavioral/10/split_08" "./triplets/behavioral/10/split_09" "./triplets/behavioral/10/split_10" "./triplets/behavioral/20/split_01" "./triplets/behavioral/20/split_02" "./triplets/behavioral/20/split_03" "./triplets/behavioral/20/split_04" "./triplets/behavioral/20/split_05" "./triplets/behavioral/50/split_01" "./triplets/behavioral/50/split_02")
-RND_SEED=0
+LAMBDAS=("0.0080" "0.0081" "0.0082" "0.0083" "0.0084" "0.0085" "0.0086" "0.0087" "0.0088" "0.0089" "0.0090" "0.0091" "0.0092" "0.0093" "0.0094" "0.0095" "0.0096" "0.0097" "0.0098" "0.0099")
+RND_SEED=9
 
 echo "Started SPoSE $SLURM_ARRAY_TASK_ID optimization at $(date)"
 
-srun python3 ./train.py --task $TASK --modality $MODALITY --triplets_dir ${TR_DIRS[$SLURM_ARRAY_TASK_ID]} --learning_rate $LR --embed_dim $DIM --batch_size $BS --epochs $T --lambdas 0.008 0.0081 0.0082 0.0083 0.0084 0.0085 0.0086 0.0087 0.0088 0.0089 0.0090 0.0091 0.0092 0.0093 0.0094 0.0095 0.0096 0.0097 0.0098 0.0099 --window_size $WS --plot_dims --device $DEVICE --rnd_seed $RND_SEED  >> spose_behavioral_parallel.out
+srun python3 ./train.py --task $TASK --modality $MODALITY --triplets_dir ${TR_DIRS[$SLURM_ARRAY_TASK_ID]} --learning_rate $LR --embed_dim $DIM --batch_size $BS --epochs $T --lambdas ${LAMBDAS[@]} --window_size $WS --plot_dims --device $DEVICE --rnd_seed $RND_SEED  >> spose_behavioral_parallel.out
 
 echo "Finished SPoSE $SLURM_ARRAY_TASK_ID optimization at $(date)"
