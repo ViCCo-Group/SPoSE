@@ -134,13 +134,13 @@ def inference(
     test_losses = dict(sorted(test_losses.items(), key=lambda kv:kv[1], reverse=True))
     #NOTE: we leverage the model that is slightly better than the median model (since we have 20 random seeds, the median is the average between model 10 and 11)
     median_model = list(test_accs.keys())[len(test_losses)//2]
+    median_model_pmfs = model_pmfs_all[median_model]
 
-    utils.pickle_file(model_pmfs_all[median_model], PATH, 'model_choice_pmfs')
+    utils.pickle_file(median_model_pmfs, PATH, 'model_choice_pmfs')
     utils.pickle_file(test_accs[median_model], PATH, 'test_accuracies')
     utils.pickle_file(test_losses[median_model], PATH, 'test_losses')
 
     human_pmfs = utils.unpickle_file(human_pmfs_dir, 'human_choice_pmfs')
-    median_model_pmfs = model_pmfs_all[median_model]
 
     klds = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='kld')
     cross_entropies = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='cross-entropy')
