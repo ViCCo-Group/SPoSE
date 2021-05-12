@@ -98,6 +98,7 @@ def inference(
     test_accs = dict()
     test_losses = dict()
     model_pmfs_all = defaultdict(dict)
+    model_choices = defaultdict(list)
 
     for model_path in model_paths:
         try:
@@ -106,7 +107,7 @@ def inference(
             raise Exception(f'\nCannot find weight matrices in: {model_path}\n')
 
         W = utils.remove_zeros(W)
-        test_acc, test_loss, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
+        triplet_choices, test_acc, test_loss, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
 
         print(f'Test accuracy for current random seed: {test_acc}')
 
@@ -114,6 +115,7 @@ def inference(
         test_accs[seed] = test_acc
         test_losses[seed] = test_loss
         model_pmfs_all[seed] = model_pmfs
+        model_choices[seed].extend(triplet_choices)
 
         with open(os.path.join(model_path, 'test_probas.npy'), 'wb') as f:
             np.save(f, probas)
@@ -135,10 +137,12 @@ def inference(
     #NOTE: we leverage the model that is slightly better than the median model (since we have 20 random seeds, the median is the average between model 10 and 11)
     median_model = list(test_accs.keys())[len(test_losses)//2]
     median_model_pmfs = model_pmfs_all[median_model]
+    median_model_choices = model_choices[median_model]
 
     utils.pickle_file(test_accs, PATH, 'test_accuracies')
     utils.pickle_file(test_losses, PATH, 'test_losses')
     utils.pickle_file(median_model_pmfs, PATH, 'median_model_choice_pmfs')
+    utils.pickle_file(median_model_choices, PATH, 'triplet_choices')
 
     human_pmfs = utils.unpickle_file(human_pmfs_dir, 'human_choice_pmfs')
 

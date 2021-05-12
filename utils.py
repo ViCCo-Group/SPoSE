@@ -186,15 +186,19 @@ def compute_similarities(anchor:torch.Tensor, positive:torch.Tensor, negative:to
     else:
         return pos_sim, neg_sim
 
-def accuracy_(probas:torch.Tensor) -> float:
-    choices = np.where(probas.mean(axis=1) == probas.max(axis=1), -1, np.argmax(probas, axis=1))
-    acc = np.where(choices == 0, 1, 0).mean()
+def break_ties(probas:np.ndarray) -> np.ndarray:
+    return np.array([-1 if len(np.unique(pmf)) != len(pmf) else np.argmax(pmf) for pmf in probas])
+
+def accuracy_(probas:np.ndarray, batching:bool=True) -> float:
+    choices = break_ties(probas)
+    argmax = np.where(choices == 0, 1, 0)
+    acc = argmax.mean() if batching else argmax.tolist()
     return acc
 
-def choice_accuracy(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str) -> float:
+def choice_accuracy(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str, batching:bool=True) -> float:
     similarities  = compute_similarities(anchor, positive, negative, method)
     probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).detach().cpu().numpy()
-    return accuracy_(probas)
+    return accuracy_(probas, batching)
 
 def trinomial_probs(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str, t:torch.Tensor) -> torch.Tensor:
     sims = compute_similarities(anchor, positive, negative, method)
@@ -343,17 +347,22 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
     W = torch.from_numpy(W).float()
     batch_accs = torch.zeros(len(test_batches))
     batch_losses = torch.zeros(len(test_batches))
+    triplet_choices = []
     for j, batch in enumerate(test_batches):
         batch = batch.to(W.device)
         logits = batch @ W.T
         anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
         similarities = compute_similarities(anchor, positive, negative, task)
         batch_probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
-        test_acc = choice_accuracy(anchor, positive, negative, task)
+
+        test_acc = choice_accuracy(anchor, positive, negative, task, batching=True)
+        test_argmax = choice_accuracy(anchor, positive, negative, task, batching=False)
         test_loss = trinomial_loss(anchor, positive, negative, task, temperature)
+
         probas[j*batch_size:(j+1)*batch_size] += batch_probas
         batch_accs[j] += test_acc
         batch_losses[j] += test_loss
+        triplet_choices.extend(test_argmax)
         human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()
         model_choices = collect_choices(batch_probas, human_choices, model_choices)
 
@@ -362,7 +371,7 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
     model_pmfs = compute_pmfs(model_choices, behavior=False)
     test_acc = batch_accs.mean().item()
     test_loss = batch_losses.mean().item()
-    return test_acc, test_loss, probas, model_pmfs
+    return triplet_choices, test_acc, test_loss, probas, model_pmfs
 
 def validation(
                 model,
