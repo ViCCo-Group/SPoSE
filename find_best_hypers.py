@@ -16,10 +16,7 @@ def del_paths_(paths:List[str]) -> None:
         plots_path = path.split('/')
         plots_path[1] = 'plots'
         plots_path = '/'.join(plots_path)
-        try:
-            shutil.rmtree(plots_path)
-        except FileNotFoundError:
-            continue
+        shutil.rmtree(plots_path)
 
 def keep_final_epoch_(PATH:str) -> None:
     models = sorted([os.path.join(root, name) for root, _, files in os.walk(PATH) for name in files if name.endswith('.tar')])
@@ -50,4 +47,12 @@ def find_best_hypers_(PATH:str) -> Tuple[str, float]:
 
 if __name__ == '__main__':
     PATH = sys.argv[1]
-    find_best_hypers_(PATH)
+    i = 0
+    for d in os.scandir(PATH):
+        if d.is_dir() and d.name.startswith('seed'):
+            find_best_hypers_(os.path.join(PATH, d.name))
+            i += 1
+        else:
+            print(f'{os.path.join(PATH, d.name)} does not seem to be a valid directory.\n')
+    if not i:
+        raise Exception('Crawling the provided path for results was not successful. Make sure to provide a path containing results for all seeds.\n')')
