@@ -136,9 +136,9 @@ def inference(
     median_model = list(test_accs.keys())[len(test_losses)//2]
     median_model_pmfs = model_pmfs_all[median_model]
 
-    utils.pickle_file(median_model_pmfs, PATH, 'model_choice_pmfs')
-    utils.pickle_file(test_accs[median_model], PATH, 'test_accuracies')
-    utils.pickle_file(test_losses[median_model], PATH, 'test_losses')
+    utils.pickle_file(test_accs, PATH, 'test_accuracies')
+    utils.pickle_file(test_losses, PATH, 'test_losses')
+    utils.pickle_file(median_model_pmfs, PATH, 'median_model_choice_pmfs')
 
     human_pmfs = utils.unpickle_file(human_pmfs_dir, 'human_choice_pmfs')
 
@@ -150,9 +150,17 @@ def inference(
     np.savetxt(os.path.join(PATH, 'cross_entropies.txt'), cross_entropies)
     np.savetxt(os.path.join(PATH, 'l1_distances.txt'), l1_distances)
 
-    print(np.mean(klds))
-    print(np.mean(cross_entropies))
-    print(np.mean(l1_distances))
+    klds = {}
+    cross_entropies = {}
+    l1_distances = {}
+    for seed, model_pmfs in model_pmfs_all.items():
+        klds[seed] = np.mean(compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='kld'))
+        cross_entropies[seed] = np.mean(compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='cross-entropy'))
+        l1_distances[seed] = np.mean(compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='l1-distance'))
+
+    utils.pickle_file(klds, PATH, 'klds_all')
+    utils.pickle_file(cross_entropies, PATH, 'cross_entropies_all')
+    utils.pickle_file(cross_entropies, PATH, 'l1_distances_all')
 
 if __name__ == '__main__':
     args = parseargs()
