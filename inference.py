@@ -150,17 +150,17 @@ def inference(
     cross_entropies = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='cross-entropy')
     l1_distances = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='l1-distance')
 
-    np.savetxt(os.path.join(PATH, 'klds.txt'), klds)
-    np.savetxt(os.path.join(PATH, 'cross_entropies.txt'), cross_entropies)
-    np.savetxt(os.path.join(PATH, 'l1_distances.txt'), l1_distances)
+    np.savetxt(os.path.join(PATH, 'klds_median.txt'), klds)
+    np.savetxt(os.path.join(PATH, 'cross_entropies_median.txt'), cross_entropies)
+    np.savetxt(os.path.join(PATH, 'l1_distances_median.txt'), l1_distances)
 
     klds = {}
     cross_entropies = {}
     l1_distances = {}
     for seed, model_pmfs in model_pmfs_all.items():
-        klds[seed] = np.mean(compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='kld'))
-        cross_entropies[seed] = np.mean(compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='cross-entropy'))
-        l1_distances[seed] = np.mean(compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='l1-distance'))
+        klds[seed] = np.mean(compute_divergences(human_pmfs, model_pmfs, alpha, metric='kld'))
+        cross_entropies[seed] = np.mean(compute_divergences(human_pmfs, model_pmfs, alpha, metric='cross-entropy'))
+        l1_distances[seed] = np.mean(compute_divergences(human_pmfs, model_pmfs, alpha, metric='l1-distance'))
 
     utils.pickle_file(klds, PATH, 'klds_all')
     utils.pickle_file(cross_entropies, PATH, 'cross_entropies_all')
