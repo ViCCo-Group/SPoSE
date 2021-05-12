@@ -16,8 +16,8 @@
 #SBATCH --mail-user=lmutt@rzg.mpg.de
 
 module purge
-module load gcc/8
-module load impi/2019.9
+module load gcc/10
+module load impi/2021.2
 module load anaconda/3/2020.02
 module load pytorch/cpu/1.7.0
 
