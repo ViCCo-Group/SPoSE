@@ -20,9 +20,12 @@ def del_paths_(paths:List[str]) -> None:
 
 def keep_final_epoch_(PATH:str) -> None:
     models = sorted([os.path.join(root, name) for root, _, files in os.walk(PATH) for name in files if name.endswith('.tar')])
+    weights = sorted([os.path.join(root, name) for root, _, files in os.walk(PATH) for name in files if name.endswith('.txt')])
     _ = models.pop()
-    for model in models:
+    _ = weights.pop()
+    for model, weight in zip(models, weights):
         os.remove(model)
+        os.remove(weight)
 
 def find_best_hypers_(PATH:str) -> Tuple[str, float]:
     paths, results = [], []
