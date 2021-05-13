@@ -55,4 +55,4 @@ if __name__ == '__main__':
         else:
             print(f'{os.path.join(PATH, d.name)} does not seem to be a valid directory.\n')
     if not i:
-        raise Exception('Crawling the provided path for results was not successful. Make sure to provide a path containing results for all seeds.\n')')
+        raise Exception('Crawling the provided path for results was not successful. Make sure to provide a path containing results for all seeds.\n')
