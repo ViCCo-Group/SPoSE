@@ -14,9 +14,9 @@ def del_paths_(paths:List[str]) -> None:
     for path in paths:
         shutil.rmtree(path)
         try:
-            plots_path = path.split('/')
-            plots_path[1] = 'plots'
-            plots_path = '/'.join(plots_path)
+            dir_list = path.split('/')
+            dir_list[1] = 'plots'
+            plots_path = '/'.join(dir_list)
             shutil.rmtree(plots_path)
         except FileNotFoundError:
             pass
