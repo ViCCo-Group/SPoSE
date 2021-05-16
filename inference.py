@@ -31,6 +31,8 @@ def parseargs():
         help='directory from where to load triplets data')
     aa('--human_pmfs_dir', type=str, default=None,
         help='directory from where to load human choice probability distributions')
+    aa('--pruning', action='store_true',
+        help='whether model weights should be pruned prior to performing inference')
     aa('--alpha', type=float, default=0,
         help='alpha value for Laplace smoothing')
     args = parser.parse_args()
@@ -85,6 +87,7 @@ def inference(
              results_dir:str,
              triplets_dir:str,
              human_pmfs_dir:str,
+             pruning:bool,
              alpha:float,
              device:torch.device,
              ) -> None:
@@ -106,7 +109,9 @@ def inference(
         except FileNotFoundError:
             raise Exception(f'\nCannot find weight matrices in: {model_path}\n')
 
-        W = utils.remove_zeros(W)
+        if pruning:
+            W = utils.remove_zeros(W)
+
         triplet_choices, test_acc, test_loss, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
 
         print(f'Test accuracy for current random seed: {test_acc}')
@@ -132,25 +137,29 @@ def inference(
         os.makedirs(PATH)
 
     assert type(human_pmfs_dir) == str, 'Directory from where to load human choice probability distributions must be provided'
-    test_accs = dict(sorted(test_accs.items(), key=lambda kv:kv[1], reverse=True))
+    test_accs = dict(sorted(test_accs.items(), key=lambda kv:kv[1], reverse=False))
     test_losses = dict(sorted(test_losses.items(), key=lambda kv:kv[1], reverse=True))
     #NOTE: we leverage the model that is slightly better than the median model (since we have 20 random seeds, the median is the average between model 10 and 11)
-    median_model = list(test_accs.keys())[len(test_losses)//2]
+    median_model = list(test_losses.keys())[int(len(test_losses)//2)-1]
     median_model_pmfs = model_pmfs_all[median_model]
+    best_model_pmfs = model_pmfs_all[list(test_losses.keys())[-1]]
     median_model_choices = model_choices[median_model]
 
     utils.pickle_file(test_accs, PATH, 'test_accuracies')
     utils.pickle_file(test_losses, PATH, 'test_losses')
     utils.pickle_file(median_model_pmfs, PATH, 'median_model_choice_pmfs')
+    utils.pickle_file(best_model_pmfs, PATH, 'model_choice_pmfs_best')
     utils.pickle_file(median_model_choices, PATH, 'triplet_choices')
 
     human_pmfs = utils.unpickle_file(human_pmfs_dir, 'human_choice_pmfs')
 
-    klds = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='kld')
+    klds_median = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='kld')
+    klds_best = compute_divergences(human_pmfs, best_model_pmfs, alpha, metric='kld')
     cross_entropies = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='cross-entropy')
     l1_distances = compute_divergences(human_pmfs, median_model_pmfs, alpha, metric='l1-distance')
 
-    np.savetxt(os.path.join(PATH, 'klds_median.txt'), klds)
+    np.savetxt(os.path.join(PATH, 'klds_median.txt'), klds_median)
+    np.savetxt(os.path.join(PATH, 'klds_best.txt'), klds_best)
     np.savetxt(os.path.join(PATH, 'cross_entropies_median.txt'), cross_entropies)
     np.savetxt(os.path.join(PATH, 'l1_distances_median.txt'), l1_distances)
 
@@ -178,6 +187,7 @@ if __name__ == '__main__':
               results_dir=args.results_dir,
               triplets_dir=args.triplets_dir,
               human_pmfs_dir=args.human_pmfs_dir,
+              pruning=args.pruning,
               alpha=args.alpha,
               device=device,
               )
