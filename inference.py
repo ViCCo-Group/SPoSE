@@ -92,7 +92,8 @@ def inference(
              device:torch.device,
              ) -> None:
 
-    PATH = os.path.join(results_dir, 'deterministic', f'{dim}d')
+    #PATH = os.path.join(results_dir, 'deterministic', f'{dim}d')
+    PATH = results_dir
     model_paths = get_model_paths(PATH)
     test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir, inference=True)
     test_batches = utils.load_batches(train_triplets=None, test_triplets=test_triplets, n_items=n_items, batch_size=batch_size, inference=True)
@@ -104,8 +105,12 @@ def inference(
     model_choices = defaultdict(list)
 
     for model_path in model_paths:
+        model_path = os.path.join(model_path, 'model')
+        model =  SPoSE(in_size=n_items, out_size=dim, init_weights=True)
         try:
-            W = np.loadtxt(os.path.join(model_path, utils.load_weights(model_path)))
+            model = utils.load_model(model, model_path, device)
+            W = model.fc.weight.data.numpy()
+            #W = np.loadtxt(os.path.join(model_path, utils.load_weights(model_path)))
         except FileNotFoundError:
             raise Exception(f'\nCannot find weight matrices in: {model_path}\n')
 
