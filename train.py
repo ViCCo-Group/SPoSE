@@ -56,12 +56,8 @@ def parseargs():
         help='list of lambda values used for l1 regularization (note that number of lambdas determines the number of initialized Python processes)')
     aa('--window_size', type=int, default=50,
         help='window size to be used for checking convergence criterion with linear regression')
-    aa('--sampling_method', type=str, default='normal',
-        choices=['normal', 'soft'],
-        help='whether random sampling of the entire training set or soft sampling of some fraction of the training set will be performed during each epoch')
-    aa('--p', type=float, default=None,
-        choices=[None, 0.5, 0.6, 0.7, 0.8, 0.9],
-        help='this argument is only necessary for soft sampling. specifies the fraction of *train* to be sampled during an epoch')
+    aa('--steps', type=int, default=50,
+            help='perform validation and save model parameters every <steps> epochs')
     aa('--plot_dims', action='store_true',
         help='whether or not to plot the number of non-negative dimensions as a function of time after convergence')
     aa('--device', type=str, default='cpu',
@@ -105,9 +101,8 @@ def run(
         embed_dim:int,
         epochs:int,
         window_size:int,
-        sampling_method:str,
         lr:float,
-        p=None,
+        steps:int,
         plot_dims:bool=True,
         verbose:bool=True,
 ):
@@ -120,9 +115,8 @@ def run(
                                                   test_triplets=test_triplets,
                                                   n_items=n_items,
                                                   batch_size=batch_size,
-                                                  sampling_method=sampling_method,
+                                                  sampling_method='normal',
                                                   rnd_seed=rnd_seed,
-                                                  p=p,
                                                   )
     print(f'\nNumber of train batches in current process: {len(train_batches)}\n')
 
@@ -250,31 +244,24 @@ def run(
 
         loglikelihoods.append(avg_llikelihood)
         complexity_losses.append(avg_closs)
-        train_losses.append(avg_train_loss)
-        train_accs.append(avg_train_acc)
-
-        ################################################
-        ################ validation ####################
-        ################################################
-
-        avg_val_loss, avg_val_acc = utils.validation(model, val_batches, 'deterministic', task, device)
-
-        val_losses.append(avg_val_loss)
-        val_accs.append(avg_val_acc)
 
         logger.info(f'Process: {process_id}')
         logger.info(f'Epoch: {epoch+1}/{epochs}')
         logger.info(f'Train acc: {avg_train_acc:.3f}')
         logger.info(f'Train loss: {avg_train_loss:.3f}')
-        logger.info(f'Val acc: {avg_val_acc:.3f}')
-        logger.info(f'Val loss: {avg_val_loss:.3f}\n')
 
         if verbose:
             print("\n==============================================================================================================")
-            print(f'====== Process: {process_id} Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
+            print(f'====== Process: {process_id} Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f} ======')
             print("==============================================================================================================\n")
 
-        if (epoch + 1) % 20 == 0:
+        if (epoch + 1) % steps == 0:
+            avg_val_loss, avg_val_acc = utils.validation(model, val_batches, task, device)
+            train_losses.append(avg_train_loss)
+            train_accs.append(avg_train_acc)
+            val_losses.append(avg_val_loss)
+            val_accs.append(avg_val_acc)
+
             W = model.fc.weight
             np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
             logger.info(f'Saving model weights at epoch {epoch+1}')
@@ -301,7 +288,7 @@ def run(
 
             logger.info(f'Saving model parameters at epoch {epoch+1}\n')
             results = {'epoch': len(train_accs), 'train_acc': train_accs[-1], 'val_acc': val_accs[-1], 'val_loss': val_losses[-1]}
-            PATH = pjoin(results_dir, f'results.json')
+            PATH = pjoin(results_dir, f'results_{epoch+1:04d}.json')
             with open(PATH, 'w') as results_file:
                 json.dump(results, results_file)
 
@@ -371,9 +358,8 @@ if __name__ == "__main__":
         args.embed_dim,
         args.epochs,
         args.window_size,
-        args.sampling_method,
         args.learning_rate,
-        args.p,
+        args.steps,
         args.plot_dims,
         ),
         nprocs=n_subprocs,

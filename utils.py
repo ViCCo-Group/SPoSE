@@ -376,7 +376,6 @@ def test(W:np.ndarray, test_batches:Iterator, task:str, device:torch.device, bat
 def validation(
                 model,
                 val_batches,
-                version:str,
                 task:str,
                 device:torch.device,
                 sampling:bool=False,
@@ -447,7 +446,7 @@ def merge_dicts(files:list) -> dict:
     return results
 
 def load_model(model, model_path:str, device:torch.device):
-    models = sorted(os.listdir(model_path))
+    models = sorted([model for model in os.listdir(model_path) if model.endswith('tar')])
     PATH = pjoin(model_path, models[-1])
     checkpoint = torch.load(PATH, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
