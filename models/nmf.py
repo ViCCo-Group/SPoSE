@@ -36,8 +36,9 @@ class NeuralNMF(nn.Module):
         self.H = nn.Parameter(torch.randn(self.n_features, self.n_components), requires_grad=True)
 
     def forward(self, x:torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        logits = x @ self.W.weight.T.abs()
-        X_hat = self.W.weight.T.abs() @ self.H.T.abs()
+        self.W.weight.data = self.W.weight.data.abs()
+        logits = self.W(x)
+        X_hat = self.W.weight.T @ self.H.T.abs()
         return X_hat, logits
 
 class BatchNMF(nn.Module):
