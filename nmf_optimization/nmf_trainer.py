@@ -130,7 +130,7 @@ class NMFTrainer(object):
             self,
             train_batches:Iterator[torch.Tensor],
             val_batches:Iterator[torch.Tensor],
-            ):
+            ) -> Tuple[List[float], List[float], List[float], List[float]]:
         if self.criterion == 'eb':
             self.nmf = self.register_hooks(self.nmf)
             stop_training = False
