@@ -12,12 +12,12 @@ import copy
 import numpy as np
 
 from collections import defaultdict
-from model.nmf import NeuralNMF, BatchNMF
-from nmf_optimization import NMFTrainer
+from sklearn.decomposition import NMF
+from models.nmf import NeuralNMF, BatchNMF
+from nmf_optimization.nmf_trainer import NMFTrainer
 from typing import List, Tuple
 
 os.environ['PYTHONIOENCODING']='UTF-8'
-os.environ['CUDA_LAUNCH_BLOCKING']='1'
 os.environ['OMP_NUM_THREADS']='1' #number of cores used per Python process (set to 2 if HT is enabled, else keep 1)
 
 def parseargs():
@@ -39,8 +39,12 @@ def parseargs():
     aa('--criterion', type=str,
         choices=['eb', 'val'],
         help='criterion for early stopping')
+    aa('--alpha', type=float,
+        help='scaling factor for reconstruction error')
     aa('--n_components', type=int, nargs='+',
         help='list of component values to run grid search over (note that number of component values determines the number of initialized Python processes)')
+    aa('--init_weights', action='store_true',
+        help='whether to initialise weights of gradient-based NMF with weights of standard NMF solution')
     aa('--out_format', type=str,
         choices=['mat', 'txt', 'npy'],
         help='format in which to store nmf weights matrix to disk')
@@ -49,6 +53,7 @@ def parseargs():
         help='number of triplets in each mini-batch')
     aa('--epochs', metavar='T', type=int, default=500,
         help='maximum number of epochs to optimize NMF for')
+    aa('--verbose', action='store_true')
     aa('--window_size', type=int, default=None,
         help='window size to be used for checking convergence criterion with linear regression (iff criterion is validation)')
     aa('--device', type=str, default='cpu',
@@ -58,6 +63,15 @@ def parseargs():
     args = parser.parse_args()
     return args
 
+def get_weights(PATH:str) -> List[np.ndarray]:
+    weights = []
+    for root, _, files in os.walk(PATH):
+        for file in files:
+            if file == 'weights_sorted.npy':
+                with open(os.path.join(root, file), 'rb') as f:
+                    W = utils.remove_zeros(np.load(f).T).T
+                weights.append(W)
+    return weights
 
 def run(
         process_id:int,
@@ -66,28 +80,34 @@ def run(
         in_path:str,
         out_path:str,
         lr:float,
+        alpha:float,
         optimizer:str,
         criterion:str,
         n_components:List[int],
         out_format:str,
+        batch_size:int,
         epochs:int,
+        rnd_seed:int,
         device:torch.device,
         init_weights:bool=False,
         window_size:int=None,
+        verbose:bool=True,
         ) -> None:
     #load triplets into memory
     train_triplets, test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir)
     n_items = utils.get_nitems(train_triplets)
     #load train and test mini-batches
     train_batches, val_batches = utils.load_batches(
-                                                  train_triplets=train_triplets,
-                                                  test_triplets=test_triplets,
-                                                  n_items=n_items,
-                                                  batch_size=batch_size,
-                                                  sampling_method='normal',
-                                                  rnd_seed=rnd_seed,
+                                                    train_triplets=train_triplets,
+                                                    test_triplets=test_triplets,
+                                                    n_items=n_items,
+                                                    batch_size=batch_size,
+                                                    sampling_method='normal',
+                                                    rnd_seed=rnd_seed,
                                                   )
 
+    weights = get_weights(in_path)
+    X = np.hstack(weights)
     p = n_components[process_id]
 
     if init_weights:
@@ -99,48 +119,53 @@ def run(
         H_nmf_cd = None
 
     if criterion == 'eb':
-        nmf_gd = NeuralNMF(n_samples=X.shape[0], n_components=n_components, n_features=X.shape[1], init_weights=init_weights, W=W_nmf_cd, H=H_nmf_cd)
+        nmf_gd = NeuralNMF(n_samples=X.shape[0], n_components=p, n_features=X.shape[1], init_weights=init_weights, W=W_nmf_cd, H=H_nmf_cd)
     else:
-        nmf_gd = BatchNMF(n_samples=X.shape[0], n_components=n_components, n_features=X.shape[1], init_weights=init_weights, W=W_nmf_cd, H=H_nmf_cd)
+        nmf_gd = BatchNMF(n_samples=X.shape[0], n_components=p, n_features=X.shape[1], init_weights=init_weights, W=W_nmf_cd, H=H_nmf_cd)
 
-    
+    X = torch.from_numpy(X)
+    nmf_gd.to(device)
+    nmf_trainer = NMFTrainer(
+                             nmf=nmf_gd,
+                             optim=optimizer,
+                             X=X,
+                             lr=lr,
+                             alpha=alpha,
+                             temperature=torch.tensor(1.),
+                             epochs=epochs,
+                             batch_size=batch_size,
+                             task=task,
+                             criterion=criterion,
+                             device=device,
+                             window_size=window_size,
+                             verbose=verbose,
+                             )
+    train_losses, train_accs, val_losses, val_accs = nmf_trainer.fit(train_batches, val_batches)
 
-    optim = Adam(nmf_gd.parameters(), lr=lr)
-    trainer = NMFTrainer(
-                         nmf=nmf_gd,
-                         optim=optim,
-                         X=X,
-                         lr=lr,
-                         temperature=temperature,
-                         epochs=epochs,
-                         task=task,
-                         device=device,
-                         verbose=verbose,
-                         )
-        model = models[k]
-        trainer = Trainer(
-                         lr=lr,
-                         batch_size=batch_size,
-                         max_epochs=max_epochs,
-                         steps=steps,
-                         criterion=criterion,
-                         optimizer=optimizer,
-                         device=device,
-                         results_dir=results_dir,
-                         window_size=window_size,
-        )
-        steps, train_losses, val_losses = trainer.fit(model=model, train_batches=train_batches, val_batches=val_batches, verbose=True)
-        print(f'Finished optimization for {criterion} criterion after {steps} steps\n')
+    results = {}
+    results['val_acc'] = val_accs[-1]
+    results['val_loss'] = val_losses[-1]
+    results['train_acc'] = train_accs[-1]
+    results['train_losses'] = train_losses[-1]
 
-        results[criterion]['stopping'] = steps
-        results[criterion]['train_losses'] = train_losses
-        results[criterion]['val_losses'] = val_losses
+    results_path = os.path.join(out_path, f'{p:02d}')
+    if not os.path.exists(results_path):
+        os.makedirs(results_path)
 
-    _save_results(trainer, results)
+    with open(os.path.join(results_path, 'results.json'), 'w') as f:
+        json.dump(results, f)
 
-def _save_results(trainer:object, results:dict) -> None:
-    with open(os.path.join(trainer.PATH, 'results.txt'), 'wb') as f:
-        f.write(pickle.dumps(results))
+    _save_weights(trainer=NMFTrainer, results_path=results_path, format=out_format)
+
+def _save_weights(trainer:object, results_path:str, format:str) -> None:
+    W_nmf = trainer.nmf.W.weight.data.detach().abs().numpy()
+    if format == 'txt':
+        np.savetxt(os.path.join(results_path, 'nmf_components.txt'), W_nmf)
+    elif format == 'npy':
+        with open(os.path.join(results_path, 'nmf_components.npy'), 'wb') as f:
+            np.save(f, W_nmf)
+    else:
+        scipy.io.savemat(os.path.join(results_path, 'nmf_components.mat'), {'components': W_nmf})
 
 if __name__ == '__main__':
     torch.multiprocessing.set_start_method('spawn', force=True)
@@ -156,7 +181,7 @@ if __name__ == '__main__':
     print(f'\nUsing {n_subprocs} CPU cores for parallel training\n')
     device = torch.device(args.device)
 
-     torch.multiprocessing.spawn(
+    torch.multiprocessing.spawn(
         run,
         args=(
         args.task,
@@ -164,14 +189,18 @@ if __name__ == '__main__':
         args.in_path,
         args.out_path,
         args.learning_rate,
+        args.alpha,
         args.optimizer,
         args.criterion,
         args.n_components,
         args.out_format,
         args.batch_size,
         args.epochs,
+        args.rnd_seed,
+        device,
+        args.init_weights,
         args.window_size,
-        device
+        args.verbose,
         ),
         nprocs=n_subprocs,
         join=True)
