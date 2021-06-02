@@ -77,8 +77,8 @@ class NMFTrainer(object):
                 anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
                 val_centropy = utils.trinomial_loss(anchor, positive, negative, self.task, self.temperature)
                 val_acc = utils.choice_accuracy(anchor, positive, negative, self.task)
-                batch_losses_val += val_centropy
-                batch_accs_val += val_acc
+                batch_losses_val[i] += val_centropy
+                batch_accs_val[i] += val_acc
         avg_val_loss = batch_losses_val.mean().item()
         avg_val_acc = batch_accs_val.mean().item()
         return avg_val_loss, avg_val_acc
