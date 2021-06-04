@@ -62,7 +62,7 @@ def parseargs():
         choices=[None, 0.5, 0.6, 0.7, 0.8, 0.9],
         help='this argument is only necessary for soft sampling. specifies the fraction of *train* to be sampled during an epoch')
     aa('--device', type=str, default='cpu',
-        choices=['cpu', 'cuda', 'cuda:0', 'cuda:1'])
+        choices=['cpu', 'cuda', 'cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7'])
     aa('--multi_proc', action='store_true',
         help='whether to perform multi-process distributed GPU training')
     aa('--local_rank', type=int, default=None,
@@ -354,29 +354,30 @@ if __name__ == "__main__":
     random.seed(args.rnd_seed)
     torch.manual_seed(args.rnd_seed)
 
-    n_gpus = torch.cuda.device_count()
     multi_proc = args.multi_proc
-    if (multi_proc and n_gpus > 1):
-        global local_rank
-        local_rank = args.local_rank
-        device = torch.device(f'cuda:{local_rank}')
-        torch.cuda.set_device(local_rank)
-        torch.cuda.manual_seed_all(args.rnd_seed)
-        torch.distributed.init_process_group(backend='nccl', init_method='env://')
-        #TODO: figure out whether line below is necessary for single-node multi-proc distributed training
-        #torch.distributed.barrier()
-        print(f'\nUsing {n_gpus} GPUs for multi-process distributed training.')
-        print(f'Local GPU rank in current process: {local_rank}')
-        print(f'PyTorch CUDA version: {torch.version.cuda}\n')
-    elif n_gpus == 1:
-        device = torch.device(args.device)
-        torch.cuda.manual_seed_all(args.rnd_seed)
-        torch.backends.cudnn.benchmark = False
-        try:
-            torch.cuda.set_device(int(args.device[-1]))
-        except:
-            torch.cuda.set_device(1)
-        print(f'\nPyTorch CUDA version: {torch.version.cuda}\n')
+    if re.search(r'^cuda', args.device):
+        n_gpus = torch.cuda.device_count()
+        if (multi_proc and n_gpus > 1):
+            global local_rank
+            local_rank = args.local_rank
+            device = torch.device(f'cuda:{local_rank}')
+            torch.cuda.set_device(local_rank)
+            torch.cuda.manual_seed_all(args.rnd_seed)
+            torch.distributed.init_process_group(backend='nccl', init_method='env://')
+            #TODO: figure out whether line below is necessary for single-node multi-proc distributed training
+            #torch.distributed.barrier()
+            print(f'\nUsing {n_gpus} GPUs for multi-process distributed training.')
+            print(f'Local GPU rank in current process: {local_rank}')
+            print(f'PyTorch CUDA version: {torch.version.cuda}\n')
+        elif n_gpus == 1:
+            device = torch.device(args.device)
+            torch.cuda.manual_seed_all(args.rnd_seed)
+            torch.backends.cudnn.benchmark = False
+            try:
+                torch.cuda.set_device(int(args.device[-1]))
+            except:
+                torch.cuda.set_device(1)
+            print(f'\nPyTorch CUDA version: {torch.version.cuda}\n')
     else:
         device = torch.device(args.device)
 
