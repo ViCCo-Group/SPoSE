@@ -21,25 +21,18 @@
  --epochs (maximum number of epochs to optimize SPoSE model for)
  --window_size (window size to be used for checking convergence criterion with linear regression)
  --sampling_method (sampling method; if soft, then you can specify a fraction of your training data to be sampled from during each epoch; else full train set will be used)
+ --steps (save model parameters and create checkpoints every <steps> epochs)
+ --resume (bool) (whether to resume training at last checkpoint; if not set training will restart)
  --p (fraction of train set to sample)
  --device (CPU or CUDA)
- --multi_proc (whether to perform single or multi node multi-process distributed training; only possible on GPU)
  --rnd_seed (random seed)
 ```
 
 Here is an example call for single-process training:
 
 ```
-python train.py --task odd_one_out --modality behavioral/ --triplets_dir ./triplets/behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 100 --batch_size 128 --epochs 500 --window_size 50 --sampling_method soft --p 0.7 --device cuda --rnd_seed 42
+python train.py --task odd_one_out --modality behavioral/ --triplets_dir ./triplets/behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 100 --batch_size 128 --epochs 500 --window_size 50 --steps 5 --sampling_method normal --device cuda --rnd_seed 42
 ```
-
-Here is an example call for single-node multi-process GPU training:
-
-```
-python -m torch.distributed.launch --nproc_per_node=NUM_GPUS_YOU_HAVE_ON_NODE main.py --task odd_one_out --modality behavioral/ --triplets_dir ./triplets/behavioral/ --learning_rate 0.001 --lmbda 0.008 --embed_dim 90 --batch_size 128 --epochs 500 --window_size 30 --device cuda --multi_proc --rnd_seed 42
-```
-
-For multi-node multi-process GPU training have a look [here](https://pytorch.org/docs/stable/distributed.html). 
 
 #### NOTES:
 
