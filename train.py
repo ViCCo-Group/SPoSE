@@ -55,18 +55,18 @@ def parseargs():
         help='maximum number of epochs to optimize SPoSE model for')
     aa('--window_size', type=int, default=50,
         help='window size to be used for checking convergence criterion with linear regression')
+    aa('--steps', type=int, default=10,
+        help='save model parameters and create checkpoints every <steps> epochs')
     aa('--sampling_method', type=str, default='normal',
         choices=['normal', 'soft'],
         help='whether random sampling of the entire training set or soft sampling of some fraction of the training set will be performed during each epoch')
     aa('--p', type=float, default=None,
         choices=[None, 0.5, 0.6, 0.7, 0.8, 0.9],
         help='this argument is only necessary for soft sampling. specifies the fraction of *train* to be sampled during an epoch')
+    aa('--resume', action='store_true',
+        help='whether to resume training at last checkpoint; if not set training will restart')
     aa('--device', type=str, default='cpu',
         choices=['cpu', 'cuda', 'cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7'])
-    aa('--multi_proc', action='store_true',
-        help='whether to perform multi-process distributed GPU training')
-    aa('--local_rank', type=int, default=None,
-        help='specifies local rank of GPU in multi-process distributed training setting')
     aa('--rnd_seed', type=int, default=42,
         help='random seed for reproducibility')
     args = parser.parse_args()
@@ -106,9 +106,9 @@ def run(
         sampling_method:str,
         lmbda:float,
         lr:float,
-        multi_proc:bool=False,
-        n_gpus:int=None,
+        steps:int,
         p:float=None,
+        resume:bool=False,
         show_progress:bool=True,
 ):
     #initialise logger and start logging events
@@ -124,8 +124,6 @@ def run(
                                                       n_items=n_items,
                                                       batch_size=batch_size,
                                                       sampling_method=sampling_method,
-                                                      multi_proc=multi_proc,
-                                                      n_gpus=n_gpus,
                                                       rnd_seed=rnd_seed,
                                                       p=p,
                                                       )
@@ -158,57 +156,44 @@ def run(
 
     model_dir = os.path.join(results_dir, 'model')
 
-    ################################################
-    ############## Data Parallelism ################
-    ################################################
-
-    if (multi_proc and n_gpus > 1):
-        model = nn.parallel.DistributedDataParallel(
-                                                    model,
-                                                    device_ids=[local_rank],
-                                                    output_device=local_rank,
-                                                    )
-
     #####################################################################
     ######### Load model from previous checkpoint, if available #########
     #####################################################################
 
-    if os.path.exists(model_dir):
-        models = sorted([m.name for m in os.scandir(model_dir) if m.name.endswith('.tar')])
-        if len(models) > 0:
-            try:
-                PATH = os.path.join(model_dir, models[-1])
-                #TODO: figure out whether line below is really necessary to load model's checkpoints for single-node multi-proc distrib training
-                #torch.distributed.barrier()
-                map_location = {f'cuda:0': f'cuda:{local_rank}'} if (multi_proc and n_gpus > 1) else device
-                checkpoint = torch.load(PATH, map_location=map_location)
-                model.load_state_dict(checkpoint['model_state_dict'])
-                optim.load_state_dict(checkpoint['optim_state_dict'])
-                start = checkpoint['epoch'] + 1
-                loss = checkpoint['loss']
-                train_accs = checkpoint['train_accs']
-                val_accs = checkpoint['val_accs']
-                train_losses = checkpoint['train_losses']
-                val_losses = checkpoint['val_losses']
-                nneg_d_over_time = checkpoint['nneg_d_over_time']
-                loglikelihoods = checkpoint['loglikelihoods']
-                complexity_losses = checkpoint['complexity_costs']
-                print(f'...Loaded model and optimizer state dicts from previous run. Starting at epoch {start}.\n')
-            except RuntimeError:
-                print(f'...Loading model and optimizer state dicts failed. Check whether you are currently using a different set of model parameters.\n')
-                start = 0
-                train_accs, val_accs = [], []
-                train_losses, val_losses = [], []
-                loglikelihoods, complexity_losses = [], []
-                nneg_d_over_time = []
+    if resume:
+        if os.path.exists(model_dir):
+            models = sorted([m.name for m in os.scandir(model_dir) if m.name.endswith('.tar')])
+            if len(models) > 0:
+                try:
+                    PATH = os.path.join(model_dir, models[-1])
+                    map_location = device
+                    checkpoint = torch.load(PATH, map_location=map_location)
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                    optim.load_state_dict(checkpoint['optim_state_dict'])
+                    start = checkpoint['epoch'] + 1
+                    loss = checkpoint['loss']
+                    train_accs = checkpoint['train_accs']
+                    val_accs = checkpoint['val_accs']
+                    train_losses = checkpoint['train_losses']
+                    val_losses = checkpoint['val_losses']
+                    nneg_d_over_time = checkpoint['nneg_d_over_time']
+                    loglikelihoods = checkpoint['loglikelihoods']
+                    complexity_losses = checkpoint['complexity_costs']
+                    print(f'...Loaded model and optimizer state dicts from previous run. Starting at epoch {start}.\n')
+                except RuntimeError:
+                    print(f'...Loading model and optimizer state dicts failed. Check whether you are currently using a different set of model parameters.\n')
+                    start = 0
+                    train_accs, val_accs = [], []
+                    train_losses, val_losses = [], []
+                    loglikelihoods, complexity_losses = [], []
+                    nneg_d_over_time = []
+            else:
+                raise Exception('No checkpoints found. Cannot resume training.')
         else:
-            start = 0
-            train_accs, val_accs = [], []
-            train_losses, val_losses = [], []
-            loglikelihoods, complexity_losses = [], []
-            nneg_d_over_time = []
+            raise Exception('Model directory does not exist. Cannot resume training.')
     else:
-        os.makedirs(model_dir)
+        if not os.path.exists(model_dir):
+            os.makedirs(model_dir)
         start = 0
         train_accs, val_accs = [], []
         train_losses, val_losses = [], []
@@ -223,6 +208,7 @@ def run(
     results = {}
     logger.info(f'Optimization started for lambda: {lmbda}\n')
 
+    print(f'Optimization started for lambda: {lmbda}\n')
     for epoch in range(start, epochs):
         model.train()
         batch_llikelihoods = torch.zeros(len(train_batches))
@@ -236,7 +222,7 @@ def run(
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
             c_entropy = utils.trinomial_loss(anchor, positive, negative, task, temperature)
             l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
-            W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
+            W = model.fc.weight
             pos_pen = torch.sum(F.relu(-W)) #positivity constraint to enforce non-negative values in embedding matrix
             complexity_loss = (lmbda/n_items) * l1_pen
             loss = c_entropy + 0.01 * pos_pen + complexity_loss
@@ -268,18 +254,18 @@ def run(
         val_accs.append(avg_val_acc)
 
         logger.info(f'Epoch: {epoch+1}/{epochs}')
-        logger.info(f'Train acc: {avg_train_acc:.3f}')
-        logger.info(f'Train loss: {avg_train_loss:.3f}')
-        logger.info(f'Val acc: {avg_val_acc:.3f}')
-        logger.info(f'Val loss: {avg_val_loss:.3f}\n')
+        logger.info(f'Train acc: {avg_train_acc:.5f}')
+        logger.info(f'Train loss: {avg_train_loss:.5f}')
+        logger.info(f'Val acc: {avg_val_acc:.5f}')
+        logger.info(f'Val loss: {avg_val_loss:.5f}\n')
 
         if show_progress:
             print("\n========================================================================================================")
-            print(f'====== Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f}, Val acc: {avg_val_acc:.3f}, Val loss: {avg_val_loss:.3f} ======')
+            print(f'====== Epoch: {epoch+1}, Train acc: {avg_train_acc:.5f}, Train loss: {avg_train_loss:.5f}, Val acc: {avg_val_acc:.5f}, Val loss: {avg_val_loss:.5f} ======')
             print("========================================================================================================\n")
 
-        if (epoch + 1) % 10 == 0:
-            W = model.module.fc.weight if (multi_proc and n_gpus > 1) else model.fc.weight
+        if (epoch + 1) % steps == 0:
+            W = model.fc.weight
             np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
             logger.info(f'Saving model weights at epoch {epoch+1}')
 
@@ -292,35 +278,20 @@ def run(
 
             #save model and optim parameters for inference or to resume training
             #PyTorch convention is to save checkpoints as .tar files
-            if (multi_proc and n_gpus > 1):
-                if local_rank == 0:
-                    torch.save({
-                                'epoch': epoch,
-                                'model_state_dict': model.state_dict(),
-                                'optim_state_dict': optim.state_dict(),
-                                'loss': loss,
-                                'train_losses': train_losses,
-                                'train_accs': train_accs,
-                                'val_losses': val_losses,
-                                'val_accs': val_accs,
-                                'nneg_d_over_time': nneg_d_over_time,
-                                'loglikelihoods': loglikelihoods,
-                                'complexity_costs': complexity_losses,
-                                }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
-            else:
-                torch.save({
-                            'epoch': epoch,
-                            'model_state_dict': model.state_dict(),
-                            'optim_state_dict': optim.state_dict(),
-                            'loss': loss,
-                            'train_losses': train_losses,
-                            'train_accs': train_accs,
-                            'val_losses': val_losses,
-                            'val_accs': val_accs,
-                            'nneg_d_over_time': nneg_d_over_time,
-                            'loglikelihoods': loglikelihoods,
-                            'complexity_costs': complexity_losses,
-                            }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
+
+            torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': model.state_dict(),
+                        'optim_state_dict': optim.state_dict(),
+                        'loss': loss,
+                        'train_losses': train_losses,
+                        'train_accs': train_accs,
+                        'val_losses': val_losses,
+                        'val_accs': val_accs,
+                        'nneg_d_over_time': nneg_d_over_time,
+                        'loglikelihoods': loglikelihoods,
+                        'complexity_costs': complexity_losses,
+                        }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
 
             logger.info(f'Saving model parameters at epoch {epoch+1}\n')
 
@@ -356,30 +327,15 @@ if __name__ == "__main__":
     random.seed(args.rnd_seed)
     torch.manual_seed(args.rnd_seed)
 
-    multi_proc = args.multi_proc
     if re.search(r'^cuda', args.device):
-        n_gpus = torch.cuda.device_count()
-        if (multi_proc and n_gpus > 1):
-            global local_rank
-            local_rank = args.local_rank
-            device = torch.device(f'cuda:{local_rank}')
-            torch.cuda.set_device(local_rank)
-            torch.cuda.manual_seed_all(args.rnd_seed)
-            torch.distributed.init_process_group(backend='nccl', init_method='env://')
-            #TODO: figure out whether line below is necessary for single-node multi-proc distributed training
-            #torch.distributed.barrier()
-            print(f'\nUsing {n_gpus} GPUs for multi-process distributed training.')
-            print(f'Local GPU rank in current process: {local_rank}')
-            print(f'PyTorch CUDA version: {torch.version.cuda}\n')
-        elif n_gpus == 1:
-            device = torch.device(args.device)
-            torch.cuda.manual_seed_all(args.rnd_seed)
-            torch.backends.cudnn.benchmark = False
-            try:
-                torch.cuda.set_device(int(args.device[-1]))
-            except:
-                torch.cuda.set_device(1)
-            print(f'\nPyTorch CUDA version: {torch.version.cuda}\n')
+        device = torch.device(args.device)
+        torch.cuda.manual_seed_all(args.rnd_seed)
+        torch.backends.cudnn.benchmark = False
+        try:
+            torch.cuda.set_device(int(args.device[-1]))
+        except:
+            torch.cuda.set_device(1)
+        print(f'\nPyTorch CUDA version: {torch.version.cuda}\n')
     else:
         device = torch.device(args.device)
 
@@ -398,5 +354,7 @@ if __name__ == "__main__":
         sampling_method=args.sampling_method,
         lmbda=args.lmbda,
         lr=args.learning_rate,
+        steps=args.steps,
+        resume=args.resume,
         p=args.p,
         )
