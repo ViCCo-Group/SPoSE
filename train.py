@@ -106,7 +106,9 @@ def run(
         sampling_method:str,
         lmbda:float,
         lr:float,
-        p=None,
+        multi_proc:bool=False,
+        n_gpus:int=None,
+        p:float=None,
         show_progress:bool=True,
 ):
     #initialise logger and start logging events
