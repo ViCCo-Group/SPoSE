@@ -23,7 +23,7 @@
  --sampling_method (sampling method; if soft, then you can specify a fraction of your training data to be sampled from during each epoch; else full train set will be used)
  --steps (save model parameters and create checkpoints every <steps> epochs)
  --resume (bool) (whether to resume training at last checkpoint; if not set training will restart)
- --p (fraction of train set to sample)
+ --p (fraction of train set to sample; only necessary for *soft* sampling)
  --device (CPU or CUDA)
  --rnd_seed (random seed)
 ```
