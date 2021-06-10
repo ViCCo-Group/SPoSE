@@ -263,22 +263,19 @@ def run(
             print("\n========================================================================================================")
             print(f'====== Epoch: {epoch+1}, Train acc: {avg_train_acc:.5f}, Train loss: {avg_train_loss:.5f}, Val acc: {avg_val_acc:.5f}, Val loss: {avg_val_loss:.5f} ======')
             print("========================================================================================================\n")
+            current_d = utils.get_nneg_dims(W)
+            nneg_d_over_time.append((epoch+1, current_d))
+            print("\n========================================================================================================")
+            print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
+            print("========================================================================================================\n")
 
         if (epoch + 1) % steps == 0:
             W = model.fc.weight
             np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
             logger.info(f'Saving model weights at epoch {epoch+1}')
 
-            current_d = utils.get_nneg_dims(W)
-
-            nneg_d_over_time.append((epoch+1, current_d))
-            print("\n========================================================================================================")
-            print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
-            print("========================================================================================================\n")
-
             #save model and optim parameters for inference or to resume training
             #PyTorch convention is to save checkpoints as .tar files
-
             torch.save({
                         'epoch': epoch,
                         'model_state_dict': model.state_dict(),
@@ -295,11 +292,11 @@ def run(
 
             logger.info(f'Saving model parameters at epoch {epoch+1}\n')
 
-            if (epoch + 1) > window_size:
-                #check termination condition (we want to train until convergence)
-                lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
-                if (lmres.slope > 0) or (lmres.pvalue > .1):
-                    break
+        if (epoch + 1) > window_size:
+            #check termination condition (we want to train until convergence)
+            lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
+            if (lmres.slope > 0) or (lmres.pvalue > .1):
+                break
 
     #save final model weights
     utils.save_weights_(results_dir, model.fc.weight)
