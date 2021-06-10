@@ -252,11 +252,14 @@ def run(
 
         if verbose:
             print("\n==============================================================================================================")
-            print(f'====== Process: {process_id} Epoch: {epoch+1}, Train acc: {avg_train_acc:.3f}, Train loss: {avg_train_loss:.3f} ======')
+            print(f'====== Process: {process_id} Epoch: {epoch+1}, Train acc: {avg_train_acc:.5f}, Train loss: {avg_train_loss:.5f} ======')
             print("==============================================================================================================\n")
 
         if (epoch + 1) % steps == 0:
             avg_val_loss, avg_val_acc = utils.validation(model, val_batches, task, device)
+            print("=================================================================")
+            print(f'====== Val acc: {avg_val_acc:.5f}, Val loss: {avg_val_loss:.5f} ======')
+            print("=================================================================")
             train_losses.append(avg_train_loss)
             train_accs.append(avg_train_acc)
             val_losses.append(avg_val_loss)
@@ -287,7 +290,7 @@ def run(
                         }, os.path.join(model_dir, f'model_epoch{epoch+1:04d}.tar'))
 
             logger.info(f'Saving model parameters at epoch {epoch+1}\n')
-            results = {'epoch': len(train_accs), 'train_acc': train_accs[-1], 'val_acc': val_accs[-1], 'val_loss': val_losses[-1]}
+            results = {'train_acc': train_accs[-1], 'val_acc': val_accs[-1], 'val_loss': val_losses[-1]}
             PATH = pjoin(results_dir, f'results_{epoch+1:04d}.json')
             with open(PATH, 'w') as results_file:
                 json.dump(results, results_file)

@@ -48,7 +48,7 @@ class NMFTrainer(object):
         self.device = device
         self.verbose = verbose
 
-        if self.criterion == 'validation':
+        if self.criterion == 'val':
             assert isinstance(window_size, int), '\nWindow size parameter is required to examine convergence criterion\n'
             self.window_size = window_size
 
@@ -128,6 +128,7 @@ class NMFTrainer(object):
 
     def fit(
             self,
+            process_id:int,
             train_batches:Iterator[torch.Tensor],
             val_batches:Iterator[torch.Tensor],
             ) -> Tuple[List[float], List[float], List[float], List[float]]:
@@ -155,15 +156,21 @@ class NMFTrainer(object):
                 batch = batch.to(self.device)
                 logits = self.nmf(batch)
 
+                """
                 if self.criterion == 'eb':
                     X_hat = self.nmf.W.weight.T @ self.nmf.H.T.abs()
                 else:
                     X_hat = self.nmf.W.abs() @ self.nmf.H.T.abs()
+                """
 
                 anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, self.nmf.n_components)), dim=1)
                 c_entropy = utils.trinomial_loss(anchor, positive, negative, self.task, self.temperature)
+                #r_error = self.squared_norm(X_hat)
+                X_hat = (self.nmf.W.weight.T * self.nmf.a.abs()) @ (self.nmf.H.T * self.nmf.a.abs().pow(-1).unsqueeze(1))
                 r_error = self.squared_norm(X_hat)
-                loss = self.alpha * r_error + c_entropy
+                #r_error = self.squared_norm((self.nmf.W.weight.T @ self.nmf.A.weight.abs()) @ self.nmf.H.T.abs())
+                #loss =  self.alpha * r_error + c_entropy
+                loss = c_entropy
                 loss.backward()
                 optim.step()
 
@@ -175,12 +182,14 @@ class NMFTrainer(object):
                     if eb_criterion > 0:
                         stop_training = True
 
+                """
                 if (i + 1) % 200 == 0:
                     print(r_error)
                     print(c_entropy)
                     if self.criterion == 'eb':
                         print(eb_criterion)
                     print()
+                """
 
                 batch_rerrors[i] += r_error.item()
                 batch_centropies[i] += c_entropy.item()
@@ -204,7 +213,7 @@ class NMFTrainer(object):
 
             #if self.verbose:
             print("\n==============================================================================================================")
-            print(f'====== Epoch: {epoch+1}, Train acc: {avg_acc:.3f}, Val acc: {avg_val_acc:.3f}, Cross-entropy loss: {avg_centropy:.3f}, Reconstruction error: {avg_rerror:.3f}  ======')
+            print(f'====== Process: {process_id}, Epoch: {epoch+1}, Train acc: {avg_acc:.3f}, Val acc: {avg_val_acc:.3f}, Cross-entropy loss: {avg_centropy:.3f}, Reconstruction error: {avg_rerror:.3f}  ======')
             print("==============================================================================================================\n")
 
             if self.criterion == 'eb':
@@ -213,9 +222,10 @@ class NMFTrainer(object):
                     break
             else:
                 if (epoch + 1) > self.window_size:
+                    print('Checking for convergence')
                     #check termination condition (we want to train until convergence)
-                    lmres = linregress(range(self.window_size), val_losses[(epoch + 1 - self.window_size):(epoch + 2)])
+                    lmres = linregress(range(self.window_size), losses[(epoch + 1 - self.window_size):(epoch + 2)])
                     if (lmres.slope > 0) or (lmres.pvalue > .1):
                         break
 
-        return train_losses, train_accs, val_losses, val_accs
+        return losses, accuracies, val_losses, val_accs

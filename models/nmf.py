@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__all__ = ['NeuralNMF__', 'NeuralNMF_', 'NeuralNMF', 'BatchNMF']
+__all__ = ['FrozenNMF', 'DeepNMF', 'NeuralNMF', 'BatchNMF']
 
 import torch
 import torch.nn as nn
@@ -11,7 +11,7 @@ import numpy as np
 from typing import Tuple
 
 
-class NeuralNMF__(nn.Module):
+class FrozenNMF(nn.Module):
 
     def __init__(
                 self,
@@ -21,7 +21,7 @@ class NeuralNMF__(nn.Module):
                 W:np.ndarray,
                 H:np.ndarray=None,
     ):
-        super(NeuralNMF__, self).__init__()
+        super(FrozenNMF, self).__init__()
         self.n_samples = n_samples
         self.n_components = n_components
         self.n_features = n_features
@@ -36,7 +36,7 @@ class NeuralNMF__(nn.Module):
         logits = self.W(x) * self.a.abs().sqrt()
         return logits
 
-class NeuralNMF_(nn.Module):
+class DeepNMF(nn.Module):
 
     def __init__(
                 self,
@@ -46,7 +46,7 @@ class NeuralNMF_(nn.Module):
                 W:np.ndarray,
                 H:np.ndarray=None,
     ):
-        super(NeuralNMF_, self).__init__()
+        super(DeepNMF, self).__init__()
         self.n_samples = n_samples
         self.n_components = n_components
         self.n_features = n_features

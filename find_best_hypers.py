@@ -34,7 +34,8 @@ def find_best_hypers_(PATH:str) -> Tuple[str, float]:
     paths, results = [], []
     for root, _, files in os.walk(PATH):
         for name in files:
-            if name.endswith('.json'):
+            if name == 'results_0500.json':
+            #if name.endswith('.json'):
                 paths.append(root)
                 with open(os.path.join(root, name), 'r') as f:
                     val_loss = json.load(f)['val_loss']

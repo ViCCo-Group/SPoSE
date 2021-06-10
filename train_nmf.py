@@ -7,13 +7,14 @@ import random
 import os
 import torch
 import utils
+import json
 
 import copy
 import numpy as np
 
 from collections import defaultdict
 from sklearn.decomposition import NMF
-from models.nmf import NeuralNMF, BatchNMF
+from models.nmf import *
 from nmf_optimization.nmf_trainer import NMFTrainer
 from typing import List, Tuple
 
@@ -63,6 +64,7 @@ def parseargs():
     args = parser.parse_args()
     return args
 
+
 def get_weights(PATH:str) -> List[np.ndarray]:
     weights = []
     for root, _, files in os.walk(PATH):
@@ -111,7 +113,7 @@ def run(
     p = n_components[process_id]
 
     if init_weights:
-        nmf_cd = NMF(n_components=p, init='nndsvd', max_iter=5000, random_state=rnd_seed)
+        nmf_cd = NMF(n_components=p, init=None, max_iter=5000, random_state=rnd_seed)
         W_nmf_cd = nmf_cd.fit_transform(X)
         H_nmf_cd = nmf_cd.components_
     else:
@@ -122,6 +124,8 @@ def run(
         nmf_gd = NeuralNMF(n_samples=X.shape[0], n_components=p, n_features=X.shape[1], init_weights=init_weights, W=W_nmf_cd, H=H_nmf_cd)
     else:
         nmf_gd = BatchNMF(n_samples=X.shape[0], n_components=p, n_features=X.shape[1], init_weights=init_weights, W=W_nmf_cd, H=H_nmf_cd)
+
+    nmf_gd = FrozenNMF(n_samples=X.shape[0], n_components=p, n_features=X.shape[1], W=W_nmf_cd, H=H_nmf_cd)
 
     X = torch.from_numpy(X)
     nmf_gd.to(device)
@@ -140,7 +144,7 @@ def run(
                              window_size=window_size,
                              verbose=verbose,
                              )
-    train_losses, train_accs, val_losses, val_accs = nmf_trainer.fit(train_batches, val_batches)
+    train_losses, train_accs, val_losses, val_accs = nmf_trainer.fit(process_id, train_batches, val_batches)
 
     results = {}
     results['val_acc'] = val_accs[-1]
@@ -155,7 +159,7 @@ def run(
     with open(os.path.join(results_path, 'results.json'), 'w') as f:
         json.dump(results, f)
 
-    _save_weights(trainer=NMFTrainer, results_path=results_path, format=out_format)
+    _save_weights(trainer=nmf_trainer, results_path=results_path, format=out_format)
 
 def _save_weights(trainer:object, results_path:str, format:str) -> None:
     W_nmf = trainer.nmf.W.weight.data.detach().abs().numpy()
