@@ -244,6 +244,8 @@ def run(
 
         loglikelihoods.append(avg_llikelihood)
         complexity_losses.append(avg_closs)
+        train_losses.append(avg_train_loss)
+        train_accs.append(avg_train_acc)
 
         logger.info(f'Process: {process_id}')
         logger.info(f'Epoch: {epoch+1}/{epochs}')
@@ -254,26 +256,24 @@ def run(
             print("\n==============================================================================================================")
             print(f'====== Process: {process_id} Epoch: {epoch+1}, Train acc: {avg_train_acc:.5f}, Train loss: {avg_train_loss:.5f} ======')
             print("==============================================================================================================\n")
+            current_d = utils.get_nneg_dims(W)
+            nneg_d_over_time.append((epoch+1, current_d))
+            print("\n========================================================================================================")
+            print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
+            print("========================================================================================================\n")
 
         if (epoch + 1) % steps == 0:
             avg_val_loss, avg_val_acc = utils.validation(model, val_batches, task, device)
             print("=================================================================")
             print(f'====== Val acc: {avg_val_acc:.5f}, Val loss: {avg_val_loss:.5f} ======')
             print("=================================================================")
-            train_losses.append(avg_train_loss)
-            train_accs.append(avg_train_acc)
+
             val_losses.append(avg_val_loss)
             val_accs.append(avg_val_acc)
 
             W = model.fc.weight
             np.savetxt(os.path.join(results_dir, f'sparse_embed_epoch{epoch+1:04d}.txt'), W.detach().cpu().numpy())
             logger.info(f'Saving model weights at epoch {epoch+1}')
-
-            current_d = utils.get_nneg_dims(W)
-            nneg_d_over_time.append((epoch+1, current_d))
-            print("\n========================================================================================================")
-            print(f"========================= Current number of non-negative dimensions: {current_d} =========================")
-            print("========================================================================================================\n")
 
             torch.save({
                         'epoch': epoch,
@@ -295,13 +295,13 @@ def run(
             with open(PATH, 'w') as results_file:
                 json.dump(results, results_file)
 
-            """
-            if (epoch + 1) > window_size:
-                #check termination condition (we want to train until convergence)
-                lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
-                if (lmres.slope > 0) or (lmres.pvalue > .1):
-                    break
-            """
+        """
+        if (epoch + 1) > window_size:
+            #check termination condition (we want to train until convergence)
+            lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
+            if (lmres.slope > 0) or (lmres.pvalue > .1):
+                break
+        """
 
     #save final model weights
     utils.save_weights_(results_dir, model.fc.weight)
@@ -310,7 +310,7 @@ def run(
     plot_nneg_dims_over_time(plots_dir=plots_dir, nneg_d_over_time=nneg_d_over_time)
 
     logger.info(f'\nPlotting model performances over time for lambda: {lmbda}')
-    plot_single_performance(plots_dir=plots_dir, val_accs=val_accs, train_accs=train_accs)
+    plot_single_performance(plots_dir=plots_dir, val_accs=val_accs, train_accs=train_accs[::steps])
     logger.info(f'\nPlotting losses over time for lambda: {lmbda}')
     #plot both log-likelihood of the data (i.e., cross-entropy loss) and complexity loss (i.e., lmbda x l1-norm)
     plot_complexities_and_loglikelihoods(plots_dir=plots_dir, loglikelihoods=loglikelihoods, complexity_losses=complexity_losses)
