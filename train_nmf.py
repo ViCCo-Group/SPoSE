@@ -64,7 +64,6 @@ def parseargs():
     args = parser.parse_args()
     return args
 
-
 def get_weights(PATH:str) -> List[np.ndarray]:
     weights = []
     for root, _, files in os.walk(PATH):
