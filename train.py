@@ -56,8 +56,8 @@ def parseargs():
         help='list of lambda values used for l1 regularization (note that number of lambdas determines the number of initialized Python processes)')
     aa('--window_size', type=int, default=50,
         help='window size to be used for checking convergence criterion with linear regression')
-    aa('--steps', type=int, default=50,
-            help='perform validation and save model parameters every <steps> epochs')
+    aa('--steps', type=int, default=10,
+        help='perform validation and save model parameters every <steps> epochs')
     aa('--plot_dims', action='store_true',
         help='whether or not to plot the number of non-negative dimensions as a function of time after convergence')
     aa('--device', type=str, default='cpu',
