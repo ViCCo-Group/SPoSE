@@ -33,17 +33,18 @@ def keep_final_epoch_(PATH:str) -> None:
 def find_best_hypers_(PATH:str) -> Tuple[str, float]:
     paths, results = [], []
     for root, _, files in os.walk(PATH):
-        for name in files:
-            if name == 'results_0500.json':
-            #if name.endswith('.json'):
-                paths.append(root)
-                with open(os.path.join(root, name), 'r') as f:
-                    val_loss = json.load(f)['val_loss']
-                    if np.isnan(val_loss):
-                        print(f'Found NaN in cross-entropy loss for: {root}')
-                        results.append(np.inf)
-                        continue
-                    results.append(val_loss)
+        if files:
+            files = sorted([f for f in files if f.endswith('.json')])
+            for name in files:
+                if name == files[-1]:
+                    paths.append(root)
+                    with open(os.path.join(root, name), 'r') as f:
+                        val_loss = json.load(f)['val_loss']
+                        if np.isnan(val_loss):
+                            print(f'Found NaN in cross-entropy loss for: {root}')
+                            results.append(np.inf)
+                            continue
+                        results.append(val_loss)
     if sum(np.isinf(results)) == len(results):
         raise Exception(f'Found NaN values in cross-entropy loss for every model. Change lambda value grid.')
     argmin_loss = np.argmin(results)
