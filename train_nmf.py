@@ -8,6 +8,7 @@ import os
 import torch
 import utils
 import json
+import scipy
 
 import copy
 import numpy as np
@@ -38,7 +39,7 @@ def parseargs():
     aa('--optimizer', type=str,
         choices=['SGD', 'RMSprop', 'Adam', 'AdamW'])
     aa('--criterion', type=str,
-        choices=['eb', 'val'],
+        choices=['eb', 'train'],
         help='criterion for early stopping')
     aa('--alpha', type=float,
         help='scaling factor for reconstruction error')
@@ -106,7 +107,6 @@ def run(
                                                     sampling_method='normal',
                                                     rnd_seed=rnd_seed,
                                                   )
-
     weights = get_weights(in_path)
     X = np.hstack(weights)
     p = n_components[process_id]
@@ -122,9 +122,8 @@ def run(
     if criterion == 'eb':
         nmf_gd = NeuralNMF(n_samples=X.shape[0], n_components=p, n_features=X.shape[1], init_weights=init_weights, W=W_nmf_cd, H=H_nmf_cd)
     else:
-        nmf_gd = BatchNMF(n_samples=X.shape[0], n_components=p, n_features=X.shape[1], init_weights=init_weights, W=W_nmf_cd, H=H_nmf_cd)
-
-    nmf_gd = FrozenNMF(n_samples=X.shape[0], n_components=p, n_features=X.shape[1], W=W_nmf_cd, H=H_nmf_cd)
+        #nmf_gd = BatchNMF(n_samples=X.shape[0], n_components=p, n_features=X.shape[1], init_weights=init_weights, W=W_nmf_cd, H=H_nmf_cd)
+        nmf_gd = FrozenNMF(n_samples=X.shape[0], n_components=p, n_features=X.shape[1], W=W_nmf_cd, H=H_nmf_cd)
 
     X = torch.from_numpy(X)
     nmf_gd.to(device)
@@ -151,7 +150,9 @@ def run(
     results['train_acc'] = train_accs[-1]
     results['train_losses'] = train_losses[-1]
 
-    results_path = os.path.join(out_path, f'{p:02d}')
+    dir_list = triplets_dir.split('/')
+    split = dir_list[-1] if dir_list[-1] else dir_list[-2]
+    results_path = os.path.join(out_path, f'{p:02d}', f'{rnd_seed:02d}', split)
     if not os.path.exists(results_path):
         os.makedirs(results_path)
 
@@ -171,39 +172,43 @@ def _save_weights(trainer:object, results_path:str, format:str) -> None:
         scipy.io.savemat(os.path.join(results_path, 'nmf_components.mat'), {'components': W_nmf})
 
 if __name__ == '__main__':
-    torch.multiprocessing.set_start_method('spawn', force=True)
-    args = parseargs()
-    np.random.seed(args.rnd_seed)
-    random.seed(args.rnd_seed)
-    torch.manual_seed(args.rnd_seed)
-    device = torch.device(args.device)
+    for rnd_seed in range(0, 20):
+        torch.multiprocessing.set_start_method('spawn', force=True)
+        args = parseargs()
+        np.random.seed(rnd_seed)
+        random.seed(rnd_seed)
+        torch.manual_seed(rnd_seed)
+        #np.random.seed(args.rnd_seed)
+        #random.seed(args.rnd_seed)
+        #torch.manual_seed(args.rnd_seed)
+        device = torch.device(args.device)
 
-    n_subprocs = len(args.n_components)
-    if n_subprocs > os.cpu_count()-1:
-        raise Exception('Number of initialized processes exceeds the number of available CPU cores.')
-    print(f'\nUsing {n_subprocs} CPU cores for parallel training\n')
-    device = torch.device(args.device)
+        n_subprocs = len(args.n_components)
+        if n_subprocs > os.cpu_count()-1:
+            raise Exception('Number of initialized processes exceeds the number of available CPU cores.')
+        print(f'\nUsing {n_subprocs} CPU cores for parallel training\n')
+        device = torch.device(args.device)
 
-    torch.multiprocessing.spawn(
-        run,
-        args=(
-        args.task,
-        args.triplets_dir,
-        args.in_path,
-        args.out_path,
-        args.learning_rate,
-        args.alpha,
-        args.optimizer,
-        args.criterion,
-        args.n_components,
-        args.out_format,
-        args.batch_size,
-        args.epochs,
-        args.rnd_seed,
-        device,
-        args.init_weights,
-        args.window_size,
-        args.verbose,
-        ),
-        nprocs=n_subprocs,
-        join=True)
+        torch.multiprocessing.spawn(
+            run,
+            args=(
+            args.task,
+            args.triplets_dir,
+            args.in_path,
+            args.out_path,
+            args.learning_rate,
+            args.alpha,
+            args.optimizer,
+            args.criterion,
+            args.n_components,
+            args.out_format,
+            args.batch_size,
+            args.epochs,
+            rnd_seed, #args.rnd_seed
+            device,
+            args.init_weights,
+            args.window_size,
+            args.verbose,
+            ),
+            nprocs=n_subprocs,
+            join=True)

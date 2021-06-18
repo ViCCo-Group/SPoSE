@@ -48,7 +48,7 @@ class NMFTrainer(object):
         self.device = device
         self.verbose = verbose
 
-        if self.criterion == 'val':
+        if self.criterion == 'train':
             assert isinstance(window_size, int), '\nWindow size parameter is required to examine convergence criterion\n'
             self.window_size = window_size
 
@@ -165,11 +165,8 @@ class NMFTrainer(object):
 
                 anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, self.nmf.n_components)), dim=1)
                 c_entropy = utils.trinomial_loss(anchor, positive, negative, self.task, self.temperature)
-                #r_error = self.squared_norm(X_hat)
                 X_hat = (self.nmf.W.weight.T * self.nmf.a.abs()) @ (self.nmf.H.T * self.nmf.a.abs().pow(-1).unsqueeze(1))
                 r_error = self.squared_norm(X_hat)
-                #r_error = self.squared_norm((self.nmf.W.weight.T @ self.nmf.A.weight.abs()) @ self.nmf.H.T.abs())
-                #loss =  self.alpha * r_error + c_entropy
                 loss = c_entropy
                 loss.backward()
                 optim.step()

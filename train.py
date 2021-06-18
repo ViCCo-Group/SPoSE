@@ -317,53 +317,57 @@ def run(
 
 if __name__ == "__main__":
     #start parallelization (note that force must be set to true since there are other files in this project with __name__ == "__main__")
-    torch.multiprocessing.set_start_method('spawn', force=True)
-    args = parseargs()
-    np.random.seed(args.rnd_seed)
-    random.seed(args.rnd_seed)
-    torch.manual_seed(args.rnd_seed)
-    n_subprocs = len(args.lambdas)
+    for rnd_seed in range(0, 20):
+        torch.multiprocessing.set_start_method('spawn', force=True)
+        args = parseargs()
+        #np.random.seed(args.rnd_seed)
+        #random.seed(args.rnd_seed)
+        #torch.manual_seed(args.rnd_seed)
+        np.random.seed(rnd_seed)
+        random.seed(rnd_seed)
+        torch.manual_seed(rnd_seed)
+        n_subprocs = len(args.lambdas)
 
-    if re.search(r'^cuda', args.device):
-        torch.cuda.manual_seed_all(args.rnd_seed)
-        n_gpus = torch.cuda.device_count()
-        torch.backends.cudnn.benchmark = False
-        print(f'\nInitializing {n_subprocs} GPU processes for parallel training')
-        try:
-            current_device = int(args.device[-1])
-        except ValueError:
-            current_device = 1
-        try:
-            torch.cuda.set_device(current_device)
-            print(f'All processes submitted to CUDA device: {current_device}')
-        except RuntimeError:
-            torch.cuda.set_device(0)
-            print(f'All processes submitted to CUDA device: {0}')
-        print(f'PyTorch CUDA version: {torch.version.cuda}\n')
-    else:
-        if n_subprocs > os.cpu_count()-1:
-            raise Exception('Number of initialized processes exceeds the number of available CPU cores.')
-        print(f'\nUsing {n_subprocs} CPU cores for parallel training\n')
-    device = torch.device(args.device)
+        if re.search(r'^cuda', args.device):
+            torch.cuda.manual_seed_all(args.rnd_seed)
+            n_gpus = torch.cuda.device_count()
+            torch.backends.cudnn.benchmark = False
+            print(f'\nInitializing {n_subprocs} GPU processes for parallel training')
+            try:
+                current_device = int(args.device[-1])
+            except ValueError:
+                current_device = 1
+            try:
+                torch.cuda.set_device(current_device)
+                print(f'All processes submitted to CUDA device: {current_device}')
+            except RuntimeError:
+                torch.cuda.set_device(0)
+                print(f'All processes submitted to CUDA device: {0}')
+            print(f'PyTorch CUDA version: {torch.version.cuda}\n')
+        else:
+            if n_subprocs > os.cpu_count()-1:
+                raise Exception('Number of initialized processes exceeds the number of available CPU cores.')
+            print(f'\nUsing {n_subprocs} CPU cores for parallel training\n')
+        device = torch.device(args.device)
 
-    torch.multiprocessing.spawn(
-        run,
-        args=(
-        args.lambdas,
-        args.task,
-        args.rnd_seed,
-        args.modality,
-        args.results_dir,
-        args.plots_dir,
-        args.triplets_dir,
-        args.device,
-        args.batch_size,
-        args.embed_dim,
-        args.epochs,
-        args.window_size,
-        args.learning_rate,
-        args.steps,
-        args.plot_dims,
-        ),
-        nprocs=n_subprocs,
-        join=True)
+        torch.multiprocessing.spawn(
+            run,
+            args=(
+            args.lambdas,
+            args.task,
+            rnd_seed, #args.rnd_seed,
+            args.modality,
+            args.results_dir,
+            args.plots_dir,
+            args.triplets_dir,
+            args.device,
+            args.batch_size,
+            args.embed_dim,
+            args.epochs,
+            args.window_size,
+            args.learning_rate,
+            args.steps,
+            args.plot_dims,
+            ),
+            nprocs=n_subprocs,
+            join=True)
