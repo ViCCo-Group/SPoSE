@@ -133,12 +133,12 @@ def run(
     print(f'...Creating PATHs')
     print()
     if results_dir == './results/':
-        results_dir = os.path.join(results_dir, modality, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed:02d}')
+        results_dir = os.path.join(results_dir, modality, f'{embed_dim}d', f'seed{rnd_seed:02d}', f'{lmbda:.4f}')
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
     if plots_dir == './plots/':
-        plots_dir = os.path.join(plots_dir, modality, f'{embed_dim}d', str(lmbda), f'seed{rnd_seed}')
+        plots_dir = os.path.join(plots_dir, modality, f'{embed_dim}d', f'seed{rnd_seed:02d}', f'{lmbda:.4f}')
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
