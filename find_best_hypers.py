@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from collections import defaultdict
 import json
 import os
 import re
@@ -10,57 +11,104 @@ import sys
 import numpy as np
 from typing import List, Tuple
 
-def del_paths_(paths:List[str]) -> None:
-    for path in paths:
-        shutil.rmtree(path)
-        try:
-            dir_list = path.split('/')
-            dir_list[1] = 'plots'
-            plots_path = '/'.join(dir_list)
-            shutil.rmtree(plots_path)
-        except FileNotFoundError:
-            pass
 
-def keep_final_epoch_(PATH:str) -> None:
-    models = sorted([os.path.join(root, name) for root, _, files in os.walk(PATH) for name in files if name.endswith('.tar')])
-    weights = sorted([os.path.join(root, name) for root, _, files in os.walk(PATH) for name in files if name.endswith('.txt')])
+def del_paths(results: dict, best_lmbda: float) -> None:
+    for lmbda, values in results.items():
+        if lmbda != best_lmbda:
+            for root in values['roots']:
+                shutil.rmtree(root)
+                try:
+                    dir_list = root.split('/')
+                    dir_list[1] = 'plots'
+                    plots_path = '/'.join(dir_list)
+                    shutil.rmtree(plots_path)
+                except FileNotFoundError:
+                    continue
+
+
+def keep_final_models(PATH: str) -> None:
+    models = sorted([os.path.join(root, name) for root, _, files in os.walk(
+        PATH) for name in files if name.endswith('.tar')])
+    weights = sorted([os.path.join(root, name) for root, _, files in os.walk(
+        PATH) for name in files if name.endswith('.txt')])
     _ = models.pop()
     _ = weights.pop()
     for model, weight in zip(models, weights):
         os.remove(model)
         os.remove(weight)
 
-def find_best_hypers_(PATH:str) -> Tuple[str, float]:
-    paths, results = [], []
-    for root, _, files in os.walk(PATH):
-        if files:
-            files = sorted([f for f in files if f.endswith('.json')])
-            for name in files:
-                if name == files[-1]:
-                    paths.append(root)
-                    with open(os.path.join(root, name), 'r') as f:
-                        val_loss = json.load(f)['val_loss']
-                        if np.isnan(val_loss):
-                            print(f'Found NaN in cross-entropy loss for: {root}')
-                            results.append(np.inf)
-                            continue
-                        results.append(val_loss)
-    if sum(np.isinf(results)) == len(results):
-        raise Exception(f'Found NaN values in cross-entropy loss for every model. Change lambda value grid.')
-    argmin_loss = np.argmin(results)
-    best_model = paths.pop(argmin_loss)
-    print(f'Best params: {best_model}\n')
-    del_paths_(paths)
-    keep_final_epoch_(best_model)
+
+def crawl(PATH: str, dim: int) -> dict:
+    results = defaultdict(lambda: defaultdict(dict))
+    for split in os.scandir(PATH):
+        print(f'Currently crawling directories for {split.name}\n')
+        if split.is_dir() and re.search(r'(?=.*split)(?=.*\d+$)', split.name): 
+            i = 0
+            for seed in os.scandir(os.path.join(PATH, split.name, f'{dim}d')):
+                if seed.is_dir() and re.search(r'(?=^seed)(?=.*\d+$)', seed.name):
+                    for root, _, files in os.walk(os.path.join(PATH, split.name, f'{dim}d', seed.name)):
+                        if files:
+                            files = sorted([f for f in files if re.search(r'(?=^results)(?=.*json$)', f)])
+                            for f in files:
+                                if f == files[-1]:
+                                    lmbda = root.split('/')[-1]
+                                    with open(os.path.join(root, f), 'r') as f:
+                                        val_loss = json.load(f)['val_loss']
+                                        if 'roots' in results[split.name][lmbda]:
+                                            results[split.name][lmbda]['roots'].append(root)
+                                            results[split.name][lmbda]['seeds'].append(seed.name)
+                                        else:
+                                            results[split.name][lmbda]['roots'] = [root]
+                                            results[split.name][lmbda]['seeds'] = [seed.name]
+                                        if np.isnan(val_loss):
+                                            print(
+                                                f'Found NaN in cross-entropy loss for: {lmbda}')
+                                            val_loss = np.inf
+                                        if 'cross-entropies' in results[split.name][lmbda]: 
+                                            results[split.name][lmbda]['cross-entropies'].append(val_loss)
+                                        else:
+                                            results[split.name][lmbda]['cross-entropies'] = [val_loss]
+                    i += 1
+                else:
+                    print(
+                        f'{os.path.join(PATH, split.name, seed.name)} does not seem to be a valid directory.\n')
+            if not i:
+                raise Exception(
+                    'Crawling the provided path for results was not successful. Make sure to provide a path containing results for all seeds.\n')
+    return results
+
+
+def find_best_lmbda(split: dict, dim: int):
+    mean_centropies = {lmbda: np.mean(values['cross-entropies']) for lmbda, values in split.items()}
+    best_lmbda = min(mean_centropies.items(), key=lambda kv:kv[1])[0]
+    del_paths(split, best_lmbda)
+    return best_lmbda
+
+
+def get_model_links(split, best_lmbda, dim):
+    best_hyper = split[best_lmbda]
+    links = ['/'.join((f'{dim}d', seed, best_lmbda, 'model', 'model_epoch1000.tar')) for seed in best_hyper['seeds']]
+    return links
+
+
+def find_best_hypers(PATH: str, results: dict, dim: int):
+    with open(os.path.join(PATH, 'model_links.txt'), 'w') as f:
+        for split, values in results.items():
+            best_lmbda = find_best_lmbda(values, dim)
+            links = get_model_links(values, best_lmbda, dim)
+            for link in links:
+                f.write(f'/'.join((PATH.split('/')[-1], split, link)))
+                f.write('\n')
+            for root in values[best_lmbda]['roots']:
+                try:
+                    keep_final_models(root)
+                except:
+                    continue
+
 
 if __name__ == '__main__':
     PATH = sys.argv[1]
-    i = 0
-    for d in os.scandir(PATH):
-        if d.is_dir() and d.name.startswith('seed'):
-            find_best_hypers_(os.path.join(PATH, d.name))
-            i += 1
-        else:
-            print(f'{os.path.join(PATH, d.name)} does not seem to be a valid directory.\n')
-    if not i:
-        raise Exception('Crawling the provided path for results was not successful. Make sure to provide a path containing results for all seeds.\n')
+    dim = sys.argv[2]
+    results = crawl(PATH, dim)
+    find_best_hypers(PATH, results, dim)
+
