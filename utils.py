@@ -107,7 +107,7 @@ def load_concepts(folder:str='./data') -> pd.DataFrame:
     concepts = pd.read_csv(pjoin(folder, 'category_mat_manual.tsv'), encoding='utf-8', sep='\t')
     return concepts
 
-def load_data(device:torch.device, triplets_dir:str, inference:bool=False) -> Tuple[torch.Tensor]:
+def load_data(device:torch.device, triplets_dir:str, val_set : str='test_10', inference:bool=False) -> Tuple[torch.Tensor]:
     """load train and test triplet datasets into memory"""
     if inference:
         with open(pjoin(triplets_dir, 'test_triplets.npy'), 'rb') as test_triplets:
@@ -117,13 +117,13 @@ def load_data(device:torch.device, triplets_dir:str, inference:bool=False) -> Tu
         with open(pjoin(triplets_dir, 'train_90.npy'), 'rb') as train_file:
             train_triplets = torch.from_numpy(np.load(train_file)).to(device).type(torch.LongTensor)
 
-        with open(pjoin(triplets_dir, 'test_10.npy'), 'rb') as test_file:
+        with open(pjoin(triplets_dir, f'{val_set}.npy'), 'rb') as test_file:
             test_triplets = torch.from_numpy(np.load(test_file)).to(device).type(torch.LongTensor)
     except FileNotFoundError:
         print('\n...Could not find any .npy files for current modality.')
         print('...Now searching for .txt files.\n')
         train_triplets = torch.from_numpy(np.loadtxt(pjoin(triplets_dir, 'train_90.txt'))).to(device).type(torch.LongTensor)
-        test_triplets = torch.from_numpy(np.loadtxt(pjoin(triplets_dir, 'test_10.txt'))).to(device).type(torch.LongTensor)
+        test_triplets = torch.from_numpy(np.loadtxt(pjoin(triplets_dir, f'{val_set}.txt'))).to(device).type(torch.LongTensor)
     return train_triplets, test_triplets
 
 def get_nitems(train_triplets:torch.Tensor) -> int:

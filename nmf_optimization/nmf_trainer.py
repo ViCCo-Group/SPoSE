@@ -179,15 +179,6 @@ class NMFTrainer(object):
                     if eb_criterion > 0:
                         stop_training = True
 
-                """
-                if (i + 1) % 200 == 0:
-                    print(r_error)
-                    print(c_entropy)
-                    if self.criterion == 'eb':
-                        print(eb_criterion)
-                    print()
-                """
-
                 batch_rerrors[i] += r_error.item()
                 batch_centropies[i] += c_entropy.item()
                 batch_losses[i] += loss.item()
