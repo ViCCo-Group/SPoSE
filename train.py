@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# Copyright 2020 Max Planck Institute for Human Cognitive and Brain Sciences
+# Author: Lukas Muttenthaler
+
 import argparse
 import json
 import logging
