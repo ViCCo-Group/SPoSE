@@ -74,6 +74,8 @@ def parseargs():
     aa('--rnd_seed', type=int, default=42,
         help='random seed for reproducibility')
     aa('--distance_metric', type=str, default='dot', choices=['dot', 'euclidean'], help='distance metric')
+    aa('--temperature', type=float, default=1.,
+        help='softmax temperature (beta param) in probabilistic tripletizing approach')
     args = parser.parse_args()
     return args
 
@@ -115,7 +117,8 @@ def run(
         p:float=None,
         resume:bool=False,
         show_progress:bool=True,
-        distance_metric:str='dot'
+        distance_metric:str='dot',
+        temperature:float=1.
 ):
     #initialise logger and start logging events
     logger = setup_logging(file='spose_optimization.log', dir=f'./log_files/lmbda_{lmbda}/')
@@ -139,7 +142,7 @@ def run(
     ########## settings ###########
     ###############################
 
-    temperature = torch.tensor(1.).to(device)
+    temperature = torch.tensor(temperature).to(device)
     model = SPoSE(in_size=n_items, out_size=embed_dim, init_weights=True)
     model.to(device)
     optim = Adam(model.parameters(), lr=lr)
@@ -360,5 +363,6 @@ if __name__ == "__main__":
         steps=args.steps,
         resume=args.resume,
         p=args.p,
-        distance_metric=args.distance_metric
+        distance_metric=args.distance_metric,
+        temperature=args.temperature
         )
