@@ -415,10 +415,11 @@ def test(
         device:torch.device,
         batch_size=None,
         n_samples=None,
-        distance_metric: str = 'dot'
+        distance_metric: str = 'dot',
+        temperature:float=1.
 ) -> Tuple:
     probas = torch.zeros(int(len(test_batches) * batch_size), 3)
-    temperature = torch.tensor(1.).to(device)
+    temperature = torch.tensor(temperature).to(device)
     model_choices = defaultdict(list)
     model.eval()
     with torch.no_grad():
