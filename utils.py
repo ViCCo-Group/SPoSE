@@ -232,31 +232,41 @@ def softmax(sims:tuple, t:torch.Tensor) -> torch.Tensor:
 def cross_entropy_loss(sims:tuple, t:torch.Tensor) -> torch.Tensor:
     return torch.mean(-torch.log(softmax(sims, t)))
 
-def compute_similarities(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str) -> Tuple:
-    pos_sim = torch.sum(anchor * positive, dim=1)
-    neg_sim = torch.sum(anchor * negative, dim=1)
-    if method == 'odd_one_out':
-        neg_sim_2 = torch.sum(positive * negative, dim=1)
-        return pos_sim, neg_sim, neg_sim_2
-    else:
-        return pos_sim, neg_sim
+def compute_similarities(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str, distance_metric:str = 'dot') -> Tuple:
+    if distance_metric == 'dot':
+        pos_sim = torch.sum(anchor * positive, dim=1)
+        neg_sim = torch.sum(anchor * negative, dim=1)
+        if method == 'odd_one_out':
+            neg_sim_2 = torch.sum(positive * negative, dim=1)
+            return pos_sim, neg_sim, neg_sim_2
+        else:
+            return pos_sim, neg_sim
+    elif distance_metric == 'euclidean':
+        pos_sim = -1*torch.sqrt(torch.sum(torch.square(torch.sub(anchor,positive)), dim=1))
+        neg_sim = -1*torch.sqrt(torch.sum(torch.square(torch.sub(anchor,negative)), dim=1))
+        
+        if method == 'odd_one_out':
+            neg_sim_2 = -1*torch.sqrt(torch.sum(torch.square(torch.sub(positive,negative)), dim=1))
+            return pos_sim, neg_sim, neg_sim_2
+        else:
+            return pos_sim, neg_sim
 
 def accuracy_(probas:torch.Tensor) -> float:
     choices = np.where(probas.mean(axis=1) == probas.max(axis=1), -1, np.argmax(probas, axis=1))
     acc = np.where(choices == 0, 1, 0).mean()
     return acc
 
-def choice_accuracy(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str) -> float:
-    similarities  = compute_similarities(anchor, positive, negative, method)
+def choice_accuracy(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str, distance_metric: str = 'dot') -> float:
+    similarities  = compute_similarities(anchor, positive, negative, method, distance_metric)
     probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).detach().cpu().numpy()
     return accuracy_(probas)
 
-def trinomial_probs(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str, t:torch.Tensor) -> torch.Tensor:
-    sims = compute_similarities(anchor, positive, negative, method)
+def trinomial_probs(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str, t:torch.Tensor, distance_metric: str = 'dot') -> torch.Tensor:
+    sims = compute_similarities(anchor, positive, negative, method, distance_metric)
     return softmax(sims, t)
 
-def trinomial_loss(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str, t:torch.Tensor) -> torch.Tensor:
-    sims = compute_similarities(anchor, positive, negative, method)
+def trinomial_loss(anchor:torch.Tensor, positive:torch.Tensor, negative:torch.Tensor, method:str, t:torch.Tensor, distance_metric: str = 'dot') -> torch.Tensor:
+    sims = compute_similarities(anchor, positive, negative, method, distance_metric)
     return cross_entropy_loss(sims, t)
 
 def kld_online(mu_1:torch.Tensor, l_1:torch.Tensor, mu_2:torch.Tensor, l_2:torch.Tensor) -> torch.Tensor:
@@ -405,6 +415,7 @@ def test(
         device:torch.device,
         batch_size=None,
         n_samples=None,
+        distance_metric: str = 'dot'
 ) -> Tuple:
     probas = torch.zeros(int(len(test_batches) * batch_size), 3)
     temperature = torch.tensor(1.).to(device)
@@ -420,7 +431,7 @@ def test(
             else:
                 logits = model(batch)
                 anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
-                similarities = compute_similarities(anchor, positive, negative, task)
+                similarities = compute_similarities(anchor, positive, negative, task, distance_metric)
                 #stacked_sims = torch.stack(similarities, dim=-1)
                 #batch_probas = F.softmax(logsumexp_(stacked_sims), dim=1)
                 batch_probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
@@ -444,6 +455,7 @@ def validation(
                 device:torch.device,
                 sampling:bool=False,
                 batch_size=None,
+                distance_metric: str = 'dot'
                 ):
     if sampling:
         assert isinstance(batch_size, int), 'batch size must be defined'
@@ -460,7 +472,7 @@ def validation(
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, logits.shape[-1])), dim=1)
 
             if sampling:
-                similarities = compute_similarities(anchor, positive, negative, task)
+                similarities = compute_similarities(anchor, positive, negative, task, distance_metric)
                 probas = F.softmax(torch.stack(similarities, dim=-1), dim=1).numpy()
                 probas = probas[:, ::-1]
                 human_choices = batch.nonzero(as_tuple=True)[-1].view(batch_size, -1).numpy()

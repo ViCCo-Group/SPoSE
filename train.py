@@ -10,6 +10,7 @@ import logging
 import os
 import random
 import re
+from turtle import distance
 import torch
 import warnings
 import utils
@@ -72,6 +73,7 @@ def parseargs():
         choices=['cpu', 'cuda', 'cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7'])
     aa('--rnd_seed', type=int, default=42,
         help='random seed for reproducibility')
+    aa('--distance_metric', type=str, default='dot', choices=['dot', 'euclidean'], help='distance metric')
     args = parser.parse_args()
     return args
 
@@ -113,6 +115,7 @@ def run(
         p:float=None,
         resume:bool=False,
         show_progress:bool=True,
+        distance_metric:str='dot'
 ):
     #initialise logger and start logging events
     logger = setup_logging(file='spose_optimization.log', dir=f'./log_files/lmbda_{lmbda}/')
@@ -223,7 +226,7 @@ def run(
             batch = batch.to(device)
             logits = model(batch)
             anchor, positive, negative = torch.unbind(torch.reshape(logits, (-1, 3, embed_dim)), dim=1)
-            c_entropy = utils.trinomial_loss(anchor, positive, negative, task, temperature)
+            c_entropy = utils.trinomial_loss(anchor, positive, negative, task, temperature, distance_metric)
             l1_pen = l1_regularization(model).to(device) #L1-norm to enforce sparsity (many 0s)
             W = model.fc.weight
             pos_pen = torch.sum(F.relu(-W)) #positivity constraint to enforce non-negative values in embedding matrix
@@ -234,7 +237,7 @@ def run(
             batch_losses_train[i] += loss.item()
             batch_llikelihoods[i] += c_entropy.item()
             batch_closses[i] += complexity_loss.item()
-            batch_accs_train[i] += utils.choice_accuracy(anchor, positive, negative, task)
+            batch_accs_train[i] += utils.choice_accuracy(anchor, positive, negative, task, distance_metric)
             iter += 1
 
         avg_llikelihood = torch.mean(batch_llikelihoods).item()
@@ -251,7 +254,7 @@ def run(
         ################ validation ####################
         ################################################
 
-        avg_val_loss, avg_val_acc = utils.validation(model=model, val_batches=val_batches, task=task, device=device)
+        avg_val_loss, avg_val_acc = utils.validation(model=model, val_batches=val_batches, task=task, device=device, distance_metric=distance_metric)
 
         val_losses.append(avg_val_loss)
         val_accs.append(avg_val_acc)
@@ -357,4 +360,5 @@ if __name__ == "__main__":
         steps=args.steps,
         resume=args.resume,
         p=args.p,
+        distance_metric=args.distance_metric
         )
