@@ -43,6 +43,7 @@ def parseargs():
         choices=['cpu', 'cuda', 'cuda:0', 'cuda:1'])
     aa('--rnd_seed', type=int, default=42,
         help='random seed for reproducibility')
+    aa('--distance_metric', type=str, default='dot', choices=['dot', 'euclidean'], help='distance metric')
     args = parser.parse_args()
     return args
 
@@ -58,6 +59,7 @@ def run(
         embed_dim:int,
         rnd_seed:int,
         device:torch.device,
+        distance_metric:str
 ) -> None:
     #load train triplets
     train_triplets, _ = load_data(device=device, triplets_dir=os.path.join(triplets_dir, modality))
@@ -96,6 +98,7 @@ def run(
                                     embed_dim=embed_dim,
                                     sampling=True,
                                     batch_size=batch_size,
+                                    distance_metric=distance_metric
                                     )
 
         PATH = os.path.join(triplets_dir, 'synthetic', f'sample_{i+1:02d}')
@@ -140,4 +143,5 @@ if __name__ == '__main__':
         batch_size=args.batch_size,
         rnd_seed=args.rnd_seed,
         device=args.device,
+        distance_metric=args.distance_metric
         )
