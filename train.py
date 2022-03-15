@@ -50,6 +50,8 @@ def parseargs():
         help='learning rate to be used in optimizer')
     aa('--lmbda', type=float,
         help='lambda value determines weight of l1-regularization')
+    aa('--temperature', type=float, default=1.,
+        help='softmax temperature (beta param) for choice randomness')
     aa('--embed_dim', metavar='D', type=int, default=90,
         help='dimensionality of the embedding matrix')
     aa('--batch_size', metavar='B', type=int, default=100,
@@ -74,8 +76,6 @@ def parseargs():
     aa('--rnd_seed', type=int, default=42,
         help='random seed for reproducibility')
     aa('--distance_metric', type=str, default='dot', choices=['dot', 'euclidean'], help='distance metric')
-    aa('--temperature', type=float, default=1.,
-        help='softmax temperature (beta param) in probabilistic tripletizing approach')
     args = parser.parse_args()
     return args
 
