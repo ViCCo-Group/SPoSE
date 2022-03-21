@@ -115,8 +115,8 @@ def inference(
         triplet_choices, test_acc, test_loss, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
         _, _, val_loss, _, _ = utils.test(W=W, test_batches=val_batches, task=task, device=device, batch_size=batch_size)
 
-        print(f'Test accuracy for current random seed: {test_acc}')
-        print(f'Validation cross-entropy error for current random seed: {val_loss}')
+        print(f'\nTest accuracy for current random seed: {test_acc}')
+        print(f'Validation cross-entropy error for current random seed: {val_loss}\n')
 
         test_accs[seed] = test_acc
         val_losses[seed] = val_loss
