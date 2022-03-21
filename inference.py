@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-from email.policy import default
 import os
 import re
 import torch
@@ -100,7 +99,7 @@ def inference(
     for model_path in model_paths:
         seed = model_path.split('/')[-2]
         model =  SPoSE(in_size=n_items, out_size=dim, init_weights=True)
-
+        model.to(device)
         try:
             model = utils.load_model(model, model_path, device)
             W = model.fc.weight.data.cpu().numpy()
