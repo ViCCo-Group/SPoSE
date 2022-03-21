@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+from email.policy import default
 import os
 import re
 import torch
@@ -17,7 +18,7 @@ def parseargs():
     parser = argparse.ArgumentParser()
     def aa(*args, **kwargs):
         parser.add_argument(*args, **kwargs)
-    aa('--task', type=str,
+    aa('--task', type=str, default='odd_one_out',
         choices=['odd_one_out', 'similarity_task'])
     aa('--n_items', type=int, default=1854,
         help='number of unique items/objects in dataset')
@@ -27,26 +28,21 @@ def parseargs():
         help='number of triplets in each mini-batch')
     aa('--results_dir', type=str,
         help='results directory (root directory for models)')
-    aa('--triplets_dir_test', type=str,
+    aa('--triplets_dir', type=str,
         help='directory from where to load test triplets data')
-    aa('--triplets_dir_val', type=str,
-        help='directory from where to load tuning triplets data')
-    aa('--human_pmfs_dir', type=str, default=None,
-        help='directory from where to load human choice probability distributions')
-    aa('--pruning', action='store_true',
-        help='whether model weights should be pruned prior to performing inference')
     args = parser.parse_args()
     return args
 
 def get_model_paths(PATH:str) -> List[str]:
     model_paths = []
+    regex = '(?=^model)(?=.*\d)(?=.*tar$)'
     for seed in os.scandir(PATH):
         if seed.is_dir() and seed.name[-2:].isdigit():
             seed_path = os.path.join(PATH, seed.name)
             for root, _, files in os.walk(seed_path):
-                 for f in files:
-                      if re.search(r'(?=^results)(?=.*\d+)(?=.*json$)', f):
-                          model_paths.append(root)
+                files = [f for f in files if re.compile(regex).search(f)]
+                if files:
+                    model_paths.append(root)
     return model_paths
 
 def entropy_(p:np.ndarray) -> np.ndarray:
@@ -82,21 +78,16 @@ def inference(
              dim:int,
              batch_size:int,
              results_dir:str,
-             triplets_dir_test:str,
-             triplets_dir_val:str,
-             human_pmfs_dir:str,
-             pruning:bool,
+             triplets_dir:str,
              device:torch.device,
              ) -> None:
-
-    #PATH = os.path.join(results_dir, 'deterministic', f'{dim}d')
-    PATH = results_dir
+    PATH = os.path.join(results_dir, f'{dim}d')
     model_paths = get_model_paths(PATH)
-    test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir_test,  inference=True)
-    _, tuning_triplets = utils.load_data(device=device, triplets_dir=triplets_dir_val, val_set='tuning_set', inference=False)
+    test_triplets = utils.load_data(device=device, triplets_dir=triplets_dir,  inference=True)
+    _, val_triplets = utils.load_data(device=device, triplets_dir=triplets_dir, inference=False)
 
     test_batches = utils.load_batches(train_triplets=None, test_triplets=test_triplets, n_items=n_items, batch_size=batch_size, inference=True)
-    tuning_batches = utils.load_batches(train_triplets=None, test_triplets=tuning_triplets, n_items=n_items, batch_size=batch_size, inference=True)
+    val_batches = utils.load_batches(train_triplets=None, test_triplets=val_triplets, n_items=n_items, batch_size=batch_size, inference=True)
 
     print(f'\nNumber of test batches in current process: {len(test_batches)}\n')
 
@@ -107,29 +98,26 @@ def inference(
     model_choices = defaultdict(list)
 
     for model_path in model_paths:
-        model_path = os.path.join(model_path, 'model')
+        seed = model_path.split('/')[-2]
         model =  SPoSE(in_size=n_items, out_size=dim, init_weights=True)
+
         try:
             model = utils.load_model(model, model_path, device)
-            W = model.fc.weight.data.numpy()
+            W = model.fc.weight.data.cpu().numpy()
         except FileNotFoundError:
             raise Exception(f'\nCannot find weight matrices in: {model_path}\n')
 
-        if pruning:
-            W_pruned = utils.remove_zeros(np.copy(W))
-            if not min(W_pruned.shape):
-                W_pruned = np.copy(W)
-            W = W_pruned
-            print(W.shape)
-            print()
+        W_pruned = utils.remove_zeros(np.copy(W))
+        if not min(W_pruned.shape):
+            W_pruned = np.copy(W)
+        W = W_pruned
 
         triplet_choices, test_acc, test_loss, probas, model_pmfs = utils.test(W=W, test_batches=test_batches, task=task, device=device, batch_size=batch_size)
-        _, _, val_loss, _, _ = utils.test(W=W, test_batches=tuning_batches, task=task, device=device, batch_size=batch_size)
+        _, _, val_loss, _, _ = utils.test(W=W, test_batches=val_batches, task=task, device=device, batch_size=batch_size)
 
         print(f'Test accuracy for current random seed: {test_acc}')
         print(f'Validation cross-entropy error for current random seed: {val_loss}')
 
-        seed = model_path.split('/')[-3]
         test_accs[seed] = test_acc
         val_losses[seed] = val_loss
         test_losses[seed] = test_loss
@@ -150,7 +138,6 @@ def inference(
     if not os.path.exists(PATH):
         os.makedirs(PATH)
 
-    assert type(human_pmfs_dir) == str, 'Directory from where to load human choice probability distributions must be provided'
     test_accs = dict(sorted(test_accs.items(), key=lambda kv:kv[1], reverse=False))
     test_losses = dict(sorted(test_losses.items(), key=lambda kv:kv[1], reverse=True))
     val_losses = dict(sorted(val_losses.items(), key=lambda kv:kv[1], reverse=True))
@@ -166,7 +153,7 @@ def inference(
     utils.pickle_file(best_model_pmfs, PATH, 'model_choice_pmfs_best')
     utils.pickle_file(median_model_choices, PATH, 'triplet_choices')
 
-    human_pmfs = utils.unpickle_file(human_pmfs_dir, 'human_choice_pmfs')
+    human_pmfs = utils.unpickle_file(triplets_dir, 'human_choice_pmfs')
 
     klds_median = compute_divergences(human_pmfs, median_model_pmfs, metric='kld')
     klds_best = compute_divergences(human_pmfs, best_model_pmfs, metric='kld')
@@ -200,9 +187,6 @@ if __name__ == '__main__':
               dim=args.dim,
               batch_size=args.batch_size,
               results_dir=args.results_dir,
-              triplets_dir_test=args.triplets_dir_test,
-              triplets_dir_val=args.triplets_dir_val,
-              human_pmfs_dir=args.human_pmfs_dir,
-              pruning=args.pruning,
+              triplets_dir=args.triplets_dir,
               device=device,
               )
