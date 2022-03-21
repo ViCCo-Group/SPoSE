@@ -44,34 +44,34 @@ def crawl(PATH: str, dim: int) -> dict:
         print(f'Currently crawling directories for {split.name}\n')
         if split.is_dir() and re.search(r'(?=.*split)(?=.*\d+$)', split.name): 
             i = 0
-            for seed in os.scandir(os.path.join(PATH, split.name, f'{dim}d')):
-                if seed.is_dir() and re.search(r'(?=^seed)(?=.*\d+$)', seed.name):
-                    for root, _, files in os.walk(os.path.join(PATH, split.name, f'{dim}d', seed.name)):
+            for lmbda in os.scandir(os.path.join(PATH, split.name, f'{dim}d')):
+                #if seed.is_dir() and re.search(r'(?=^seed)(?=.*\d+$)', seed.name):
+                if lmbda.is_dir() and re.search(r'\d+', lmbda.name):
+                    for root, _, files in os.walk(os.path.join(PATH, split.name, f'{dim}d', lmbda.name)):
                         if files:
                             files = sorted([f for f in files if re.search(r'(?=^results)(?=.*json$)', f)])
-                            for f in files:
-                                if f == files[-1]:
-                                    lmbda = root.split('/')[-1]
-                                    with open(os.path.join(root, f), 'r') as f:
-                                        val_loss = json.load(f)['val_loss']
-                                        if 'roots' in results[split.name][lmbda]:
-                                            results[split.name][lmbda]['roots'].append(root)
-                                            results[split.name][lmbda]['seeds'].append(seed.name)
-                                        else:
-                                            results[split.name][lmbda]['roots'] = [root]
-                                            results[split.name][lmbda]['seeds'] = [seed.name]
-                                        if np.isnan(val_loss):
-                                            print(
-                                                f'Found NaN in cross-entropy loss for: {lmbda}')
-                                            val_loss = np.inf
-                                        if 'cross-entropies' in results[split.name][lmbda]: 
-                                            results[split.name][lmbda]['cross-entropies'].append(val_loss)
-                                        else:
-                                            results[split.name][lmbda]['cross-entropies'] = [val_loss]
+                            f = files[-1]
+                            seed = root.split('/')[-1]
+                            with open(os.path.join(root, f), 'r') as f:
+                                val_loss = json.load(f)['val_loss']
+                                if 'roots' in results[split.name][lmbda.name]:
+                                    results[split.name][lmbda.name]['roots'].append(root)
+                                    results[split.name][lmbda.name]['seeds'].append(seed)
+                                else:
+                                    results[split.name][lmbda.name]['roots'] = [root]
+                                    results[split.name][lmbda.name]['seeds'] = [seed]
+                                if np.isnan(val_loss):
+                                    print(
+                                        f'Found NaN in cross-entropy loss for: {lmbda.name}')
+                                    val_loss = np.inf
+                                if 'cross-entropies' in results[split.name][lmbda.name]:
+                                    results[split.name][lmbda.name]['cross-entropies'].append(val_loss)
+                                else:
+                                    results[split.name][lmbda.name]['cross-entropies'] = [val_loss]
                     i += 1
                 else:
                     print(
-                        f'{os.path.join(PATH, split.name, seed.name)} does not seem to be a valid directory.\n')
+                        f'{os.path.join(PATH, split.name, seed)} does not seem to be a valid directory.\n')
             if not i:
                 raise Exception(
                     'Crawling the provided path for results was not successful. Make sure to provide a path containing results for all seeds.\n')
@@ -87,7 +87,7 @@ def find_best_lmbda(split: dict, dim: int):
 
 def get_model_links(split, best_lmbda, dim):
     best_hyper = split[best_lmbda]
-    links = ['/'.join((f'{dim}d', seed, best_lmbda, 'model', 'model_epoch1000.tar')) for seed in best_hyper['seeds']]
+    links = ['/'.join((f'{dim}d', seed, best_lmbda, 'model', 'model_epoch2000.tar')) for seed in best_hyper['seeds']]
     return links
 
 
@@ -97,7 +97,8 @@ def find_best_hypers(PATH: str, results: dict, dim: int):
             best_lmbda = find_best_lmbda(values, dim)
             links = get_model_links(values, best_lmbda, dim)
             for link in links:
-                f.write(f'/'.join((PATH.split('/')[-1], split, link)))
+                f.write('/'.join((PATH, split, link)))
+                #f.write(f'/'.join((PATH.split('/')[-1], split, link)))
                 f.write('\n')
             for root in values[best_lmbda]['roots']:
                 try:
