@@ -76,6 +76,8 @@ def parseargs():
     aa('--rnd_seed', type=int, default=42,
         help='random seed for reproducibility')
     aa('--distance_metric', type=str, default='dot', choices=['dot', 'euclidean'], help='distance metric')
+    aa('--early_stopping', action='store_true', help='train until convergence')
+    aa('--num_threads', type=int, default=20, help='number of threads used by PyTorch multiprocessing')
     args = parser.parse_args()
     return args
 
@@ -118,7 +120,8 @@ def run(
         resume:bool=False,
         show_progress:bool=True,
         distance_metric:str='dot',
-        temperature:float=1.
+        temperature:float=1.,
+        early_stopping:bool=False
 ):
     #initialise logger and start logging events
     logger = setup_logging(file='spose_optimization.log', dir=f'./log_files/lmbda_{lmbda}/')
@@ -301,7 +304,7 @@ def run(
 
             logger.info(f'Saving model parameters at epoch {epoch+1}\n')
 
-        if (epoch + 1) > window_size:
+        if early_stopping and (epoch + 1) > window_size:
             #check termination condition (we want to train until convergence)
             lmres = linregress(range(window_size), train_losses[(epoch + 1 - window_size):(epoch + 2)])
             if (lmres.slope > 0) or (lmres.pvalue > .1):
@@ -332,6 +335,8 @@ if __name__ == "__main__":
     np.random.seed(args.rnd_seed)
     random.seed(args.rnd_seed)
     torch.manual_seed(args.rnd_seed)
+
+    torch.set_num_threads(args.num_threads)
 
     if re.search(r'^cuda', args.device):
         device = torch.device(args.device)
@@ -364,5 +369,6 @@ if __name__ == "__main__":
         resume=args.resume,
         p=args.p,
         distance_metric=args.distance_metric,
-        temperature=args.temperature
+        temperature=args.temperature,
+        early_stopping=args.early_stopping
         )
