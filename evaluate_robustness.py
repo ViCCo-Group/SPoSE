@@ -24,6 +24,8 @@ def parseargs():
         parser.add_argument(*args, **kwargs)
     aa('--results_dir', type=str,
         help='results directory (root directory for models)')
+    aa('--triplets_dir', type=str,
+        help='path/to/triplets/data')
     aa('--task', type=str, default='odd_one_out',
         choices=['odd_one_out', 'similarity_task'])
     aa('--n_items', type=int,
@@ -107,6 +109,7 @@ def compute_robustness(Ws_mu:list, thresh:float=.9):
     scores['avg_sparsity'] = utils.avg_sparsity(Ws_mu)
     scores['avg_ndims'] = avg_ndims(Ws_mu)
     scores['std_ndims'] = std_ndims(Ws_mu)
+    scores['hist'] = list(map(lambda W: W.shape[0], Ws_mu))
     n_redundant_pairs, n_redundant_dims = estimate_redundancy_(Ws_mu)
     scores['n_redundant_pairs'] = n_redundant_pairs
     scores['n_redundant_dims'] = n_redundant_dims
@@ -126,6 +129,7 @@ def get_model_paths(PATH:str) -> List[str]:
 
 def evaluate_models(
                     results_dir:str,
+                    triplets_dir:str,
                     n_items:int,
                     dim:int,
                     thresh:float,
@@ -136,7 +140,13 @@ def evaluate_models(
     PATH = os.path.join(results_dir, f'{dim}d')
     model_paths = get_model_paths(PATH)
     Ws_mu = []
-    for model_path in model_paths:
+    
+    _, val_triplets = utils.load_data(
+        device=device, triplets_dir=triplets_dir, inference=False)
+    val_batches = utils.load_batches(
+        train_triplets=None, test_triplets=val_triplets, n_items=n_items, batch_size=batch_size, inference=True)
+    val_losses = np.zeros(len(model_paths))
+    for i, model_path in enumerate(model_paths):
         model = SPoSE(in_size=n_items, out_size=dim, init_weights=True)
         model.to(device)
         try:
@@ -145,6 +155,8 @@ def evaluate_models(
             W_mu = utils.remove_zeros(np.copy(W))
         except FileNotFoundError:
             raise Exception(f'Could not find final weights for {model_path}\n')
+        _, _, val_loss, _, _ = utils.test(W=W_mu, test_batches=val_batches, task=task, device=device, batch_size=batch_size)
+        val_losses[i] += val_loss
         Ws_mu.append(W_mu)
 
     model_robustness = compute_robustness(Ws_mu, thresh=thresh)
@@ -157,12 +169,16 @@ def evaluate_models(
     with open(os.path.join(out_path, 'robustness.txt'), 'wb') as f:
         f.write(pickle.dumps(model_robustness))
 
+    with open(os.path.join(PATH, 'val_entropies.npy'), 'wb') as f:
+        np.save(f, val_losses)
+
 if __name__ == '__main__':
     args = parseargs()
     random.seed(args.rnd_seed)
     np.random.seed(args.rnd_seed)
     evaluate_models(
                     results_dir=args.results_dir,
+                    triplets_dir=args.triplets_dir,
                     task=args.task,
                     n_items=args.n_items,
                     dim=args.dim,
