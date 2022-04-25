@@ -26,6 +26,8 @@
  --p (fraction of train set to sample; only necessary for *soft* sampling)
  --device (CPU or CUDA)
  --rnd_seed (random seed)
+ --early_stopping (bool) (train until convergence)
+ --num_threads (number of threads used by PyTorch multiprocessing)
 ```
 
 Here is an example call for single-process training:
