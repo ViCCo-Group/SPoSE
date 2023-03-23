@@ -691,7 +691,7 @@ def fill_diag(rsm:np.ndarray) -> np.ndarray:
     return rsm
 
 @njit(parallel=False, fastmath=False)
-def matmul(A:np.ndarray, B:np.ndarray) -> np.ndarray:
+def matmul(A: np.ndarray, B: np.ndarray) -> np.ndarray:
     I, K = A.shape
     K, J = B.shape
     C = np.zeros((I, J))
@@ -702,11 +702,11 @@ def matmul(A:np.ndarray, B:np.ndarray) -> np.ndarray:
     return C
 
 @njit(parallel=False, fastmath=False)
-def rsm_pred(W:np.ndarray) -> np.ndarray:
+def rsm_pred(W: np.ndarray) -> np.ndarray:
     """convert weight matrix corresponding to the mean of each dim distribution for an object into a RSM"""
     N = W.shape[0]
     S = matmul(W, W.T)
-    S_e = np.exp(S) #exponentiate all elements in the inner product matrix S
+    S_e = np.exp(S)  # exponentiate all elements in the inner product matrix S
     rsm = np.zeros((N, N))
     for i in prange(N):
         for j in prange(i+1, N):
@@ -714,7 +714,7 @@ def rsm_pred(W:np.ndarray) -> np.ndarray:
                 if (k != i and k != j):
                     rsm[i, j] += S_e[i, j] / (S_e[i, j] + S_e[i, k] + S_e[j, k])
     rsm /= N - 2
-    rsm += rsm.T #make similarity matrix symmetric
+    rsm += rsm.T  # make similarity matrix symmetric
     rsm = fill_diag(rsm)
     rsm[rsm > 1] = 1
     return rsm
