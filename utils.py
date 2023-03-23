@@ -690,8 +690,8 @@ def fill_diag(rsm:np.ndarray) -> np.ndarray:
     rsm[np.eye(len(rsm)) == 1.] = 1
     return rsm
 
-@njit(parallel=True, fastmath=True)
-def matmul(A:np.ndarray, B:np.ndarray) -> np.ndarray:
+@njit(parallel=False, fastmath=False)
+def matmul(A: np.ndarray, B: np.ndarray) -> np.ndarray:
     I, K = A.shape
     K, J = B.shape
     C = np.zeros((I, J))
@@ -701,12 +701,12 @@ def matmul(A:np.ndarray, B:np.ndarray) -> np.ndarray:
                 C[i, j] += A[i, k] * B[k, j]
     return C
 
-@njit(parallel=True, fastmath=True)
-def rsm_pred(W:np.ndarray) -> np.ndarray:
+@njit(parallel=False, fastmath=False)
+def rsm_pred(W: np.ndarray) -> np.ndarray:
     """convert weight matrix corresponding to the mean of each dim distribution for an object into a RSM"""
     N = W.shape[0]
     S = matmul(W, W.T)
-    S_e = np.exp(S) #exponentiate all elements in the inner product matrix S
+    S_e = np.exp(S)  # exponentiate all elements in the inner product matrix S
     rsm = np.zeros((N, N))
     for i in prange(N):
         for j in prange(i+1, N):
@@ -714,7 +714,9 @@ def rsm_pred(W:np.ndarray) -> np.ndarray:
                 if (k != i and k != j):
                     rsm[i, j] += S_e[i, j] / (S_e[i, j] + S_e[i, k] + S_e[j, k])
     rsm /= N - 2
-    rsm += rsm.T #make similarity matrix symmetric
+    rsm += rsm.T  # make similarity matrix symmetric
+    rsm = fill_diag(rsm)
+    rsm[rsm > 1] = 1
     return rsm
 
 def rsm(W:np.ndarray, metric:str) -> np.ndarray:
@@ -725,8 +727,8 @@ def compute_trils(W_mod1:np.ndarray, W_mod2:np.ndarray, metric:str) -> float:
     metrics = ['cos', 'pred', 'rho']
     assert metric in metrics, f'\nMetric must be one of {metrics}.\n'
     if metric == 'pred':
-        rsm_1 = fill_diag(rsm_pred(W_mod1))
-        rsm_2 = fill_diag(rsm_pred(W_mod2))
+        rsm_1 = rsm_pred(W_mod1)
+        rsm_2 = rsm_pred(W_mod2)
     else:
         rsm_1 = rsm(W_mod1, metric) #RSM wrt first modality (e.g., DNN)
         rsm_2 = rsm(W_mod2, metric) #RSM wrt second modality (e.g., behavior)
