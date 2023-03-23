@@ -13,7 +13,6 @@ __all__ = [
             'cos_mat',
             'cross_correlate_latent_dims',
             'encode_as_onehot',
-            'fill_diag',
             'get_cut_off',
             'get_digits',
             'get_nneg_dims',
@@ -42,6 +41,7 @@ __all__ = [
             'rsm_pred',
             'save_weights_',
             'sparsity',
+            'spose_rsm',
             'avg_sparsity',
             'softmax',
             'sort_weights',
@@ -684,12 +684,6 @@ def corr_mat(W:np.ndarray, a_min:float=-1., a_max:float=1.) -> np.ndarray:
     corr_mat = (cov / denom).clip(min=a_min, max=a_max) #counteract potential rounding errors
     return corr_mat
 
-def fill_diag(rsm:np.ndarray) -> np.ndarray:
-    """fill main diagonal of the RSM with 1"""
-    assert np.allclose(rsm, rsm.T), '\nRSM is required to be a symmetric matrix\n'
-    rsm[np.eye(len(rsm)) == 1.] = 1
-    return rsm
-
 @njit(parallel=False, fastmath=False)
 def matmul(A: np.ndarray, B: np.ndarray) -> np.ndarray:
     I, K = A.shape
@@ -715,7 +709,11 @@ def rsm_pred(W: np.ndarray) -> np.ndarray:
                     rsm[i, j] += S_e[i, j] / (S_e[i, j] + S_e[i, k] + S_e[j, k])
     rsm /= N - 2
     rsm += rsm.T  # make similarity matrix symmetric
-    rsm = fill_diag(rsm)
+    np.fill_diagonal(rsm, 1)
+    return rsm
+
+def spose_rsm(W: np.ndarray) -> np.ndarray:
+    rsm = rsm_pred(W)
     rsm[rsm > 1] = 1
     return rsm
 
@@ -727,8 +725,8 @@ def compute_trils(W_mod1:np.ndarray, W_mod2:np.ndarray, metric:str) -> float:
     metrics = ['cos', 'pred', 'rho']
     assert metric in metrics, f'\nMetric must be one of {metrics}.\n'
     if metric == 'pred':
-        rsm_1 = rsm_pred(W_mod1)
-        rsm_2 = rsm_pred(W_mod2)
+        rsm_1 = spose_rsm(W_mod1)
+        rsm_2 = spose_rsm(W_mod2)
     else:
         rsm_1 = rsm(W_mod1, metric) #RSM wrt first modality (e.g., DNN)
         rsm_2 = rsm(W_mod2, metric) #RSM wrt second modality (e.g., behavior)
