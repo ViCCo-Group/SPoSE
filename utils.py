@@ -712,9 +712,10 @@ def rsm_pred(W: np.ndarray) -> np.ndarray:
     np.fill_diagonal(rsm, 1)
     return rsm
 
-def spose_rsm(W: np.ndarray) -> np.ndarray:
+def spose2rsm_odd_one_out(W: np.ndarray) -> np.ndarray:
     rsm = rsm_pred(W)
     rsm[rsm > 1] = 1
+    assert np.allclose(rsm, rsm.T), '\nRSM is required to be a symmetric matrix\n'
     return rsm
 
 def rsm(W:np.ndarray, metric:str) -> np.ndarray:
