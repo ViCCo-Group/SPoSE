@@ -41,7 +41,7 @@ __all__ = [
             'rsm_pred',
             'save_weights_',
             'sparsity',
-            'spose_rsm',
+            'spose2rsm_odd_one_out',
             'avg_sparsity',
             'softmax',
             'sort_weights',
