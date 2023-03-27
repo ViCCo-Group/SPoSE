@@ -726,8 +726,8 @@ def compute_trils(W_mod1:np.ndarray, W_mod2:np.ndarray, metric:str) -> float:
     metrics = ['cos', 'pred', 'rho']
     assert metric in metrics, f'\nMetric must be one of {metrics}.\n'
     if metric == 'pred':
-        rsm_1 = spose_rsm(W_mod1)
-        rsm_2 = spose_rsm(W_mod2)
+        rsm_1 = spose2rsm_odd_one_out(W_mod1)
+        rsm_2 = spose2rsm_odd_one_out(W_mod2)
     else:
         rsm_1 = rsm(W_mod1, metric) #RSM wrt first modality (e.g., DNN)
         rsm_2 = rsm(W_mod2, metric) #RSM wrt second modality (e.g., behavior)
